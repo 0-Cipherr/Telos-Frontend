@@ -10,6 +10,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@privy-io/react-auth": "^3.50.0",
+    "@web3icons/react": "^4.1.24",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
