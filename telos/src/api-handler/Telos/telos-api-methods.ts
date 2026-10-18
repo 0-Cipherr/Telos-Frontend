@@ -1,31 +1,40 @@
 class TelosAPI {
   baseURL: string = "";
-  API(baseurl: string) {
+  endpoints: any;
+  constructor(baseurl: string, _endpoints: any) {
     this.baseURL = baseurl;
+    this.endpoints = _endpoints;
   }
 
   async allVaults() {
     try {
-      const vaults: any[] = await this.executeFetch(false, [], "");
-
-      return vaults || [];
+      // const vaults: any[] = await this.executeFetch(
+      //   false,
+      //   [],
+      //   this.endpoints?.allVaults,
+      // );
+      // return vaults || [];
+      return [];
     } catch (error) {
       console.log(error);
       return [];
     }
   }
 
-  vault(id: Number) {
+  vaultById(id: Number) {
     try {
     } catch (error) {
       console.log(error);
     }
   }
 
-  async executeFetch(hasBody: boolean, fetchParams: any[], endpoint: string) {
+  async executeFetch(body: any, endpoint: string, method: string) {
     try {
       const reqURL: string = this.baseURL + endpoint;
-      const fetchRes = await fetch(reqURL);
+      const fetchRes = await fetch(reqURL, {
+        method,
+        body,
+      });
       return await fetchRes.json();
     } catch (error) {
       console.log(error);
@@ -35,3 +44,4 @@ class TelosAPI {
 }
 
 export default TelosAPI;
+//exposes more capital to protocols on top of driving volume
