@@ -1,30 +1,48 @@
 class TelosAPI {
   baseURL: string = "";
   endpoints: any;
-  constructor(baseurl: string, _endpoints: any) {
+  key: string;
+  constructor(baseurl: string, _endpoints: any, _key: string) {
     this.baseURL = baseurl;
     this.endpoints = _endpoints;
+    this.key = _key;
+  }
+
+  getAuthParam() {
+    return {
+      Authorization: `Bearer ${this.key}`,
+    };
   }
 
   async allVaults() {
     try {
-      // const vaults: any[] = await this.executeFetch(
-      //   false,
-      //   [],
-      //   this.endpoints?.allVaults,
-      // );
-      // return vaults || [];
-      return [];
+      const authParam = this.getAuthParam();
+      const vaultsFound: any[] = await this.executeFetch(
+        authParam,
+        this.endpoints.allVaults,
+        "GET",
+      );
+      return vaultsFound || [];
     } catch (error) {
       console.log(error);
       return [];
     }
   }
 
-  vaultById(id: Number) {
+  async vaultById(id: Number) {
     try {
+      const authParam = this.getAuthParam();
+      const vaultFound: any[] = await this.executeFetch(
+        { vaultId: id, authParam },
+        this.endpoints?.vaultById,
+        "GET",
+      );
+
+      return vaultFound;
     } catch (error) {
       console.log(error);
+
+      return [];
     }
   }
 
@@ -40,6 +58,10 @@ class TelosAPI {
       console.log(error);
       return {};
     }
+  }
+
+  async setKey(_key: string) {
+    this.key = _key;
   }
 }
 
