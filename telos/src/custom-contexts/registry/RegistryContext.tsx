@@ -17,17 +17,15 @@ function RegistryExecutor() {
     }
   }
 
+  async function getVaultByName() {}
 
-  async function getVaultByName(){
+  async function getVaulltByChains() {}
 
-  }
+  async function getVaultByCreator() {}
 
-  async function getVaulltByChains(){}
-
-  async function getVaultByCreator(){}
-
-  async function getVaultById(id:number){
-          const vaultsFound: any = (await telosAPI.vaultById(id)) || [];
+  async function getVaultById(id: number) {
+    try {
+      const vaultsFound: any = (await telosAPI.vaultById(id)) || [];
       setVaults(vaultsFound);
     } catch (error) {
       console.log(error);
@@ -39,5 +37,4 @@ function RegistryExecutor() {
     vaults,
   };
 }
-
 export default RegistryContext;
