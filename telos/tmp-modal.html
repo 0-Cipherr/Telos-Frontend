@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>modal check</title>
+    <style>body { margin: 0; background: #171915; color: #fff; }</style>
+  </head>
+  <body>
+    <h1 id="marker" style="position:fixed;top:0;left:0;z-index:999">MARKER</h1>
+    <div id="root"></div>
+    <script>
+      window.addEventListener("error", function (event) {
+        var pre = document.createElement("pre");
+        pre.style.cssText = "position:fixed;top:40px;left:0;z-index:999;color:#b9ff59;background:#000;padding:20px;white-space:pre-wrap";
+        pre.textContent = "ERR: " + (event.message || "no message") + " " + (event.filename || "");
+        document.body.appendChild(pre);
+      });
+    </script>
+    <script type="module" src="/src/design/tmp-modal.tsx"></script>
+  </body>
+</html>

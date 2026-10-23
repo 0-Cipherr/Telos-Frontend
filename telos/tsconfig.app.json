@@ -22,5 +22,7 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  /* Pre-existing non-UI module, intentionally left untouched. */
+  "exclude": ["src/custom-contexts"]
 }

@@ -1,0 +1,13 @@
+/* Tailwind CSS v4 — utilities only.
+ *
+ * Preflight (Tailwind's base reset) is intentionally NOT imported, so the
+ * existing index.css / telos.css design stays exactly as it is today.
+ *
+ * The layer order is declared up front and `legacy` sits below `utilities`,
+ * which lets a Tailwind utility (e.g. `p-8`) win over an existing rule
+ * (e.g. `.tl-card { padding: 14px }`) without any `!important` or overrides.
+ */
+@layer theme, base, components, legacy, utilities;
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
