@@ -6,6 +6,10 @@ import VaultTable from "./components/VaultTable";
 import Calculator from "./components/Calculator";
 import LaunchForm from "./components/LaunchForm";
 import Footer from "./components/Footer";
+import StrategyChatModal, {
+  type StrategySpec,
+} from "./components/StrategyChatModal";
+import { useRegistryActionModal } from "./custom-contexts/ModalContext";
 import type { VaultFilterKind } from "./vaults";
 import { VAULTS } from "./vaults";
 
@@ -16,6 +20,7 @@ type Props = {
   logout: () => void;
   address?: string;
   preview?: boolean;
+  previewReason?: "missing" | "insecure";
 };
 
 export default function Home({
@@ -25,17 +30,27 @@ export default function Home({
   logout,
   address,
   preview,
+  previewReason,
 }: Props) {
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<VaultFilterKind>("all");
   const [chain, setChain] = useState("All");
+  const [strategyOpen, setStrategyOpen] = useState(false);
+  const { setOpen, setStrategy } = useRegistryActionModal();
+
+  const handleUseStrategy = (spec: StrategySpec) => {
+    setStrategy(spec.code || spec.prompt);
+    setStrategyOpen(false);
+    setOpen(true);
+  };
 
   return (
     <div className="page">
       {preview ? (
         <div className="preview-bar">
-          Preview mode: add VITE_PRIVY_APP_ID to .env.local to enable wallet
-          connect
+          {previewReason === "insecure"
+            ? "Preview mode: wallet connect needs HTTPS. Open http://localhost or run `npm run tunnel` to test on a phone."
+            : "Preview mode: add VITE_PRIVY_APP_ID to .env.local to enable wallet connect"}
         </div>
       ) : null}
 
@@ -45,6 +60,7 @@ export default function Home({
         login={login}
         logout={logout}
         address={address}
+        onCreateStrategy={() => setStrategyOpen(true)}
       />
 
       <main className="wrap">
@@ -93,6 +109,12 @@ export default function Home({
       </main>
 
       <Footer />
+
+      <StrategyChatModal
+        open={strategyOpen}
+        onClose={() => setStrategyOpen(false)}
+        onUseStrategy={handleUseStrategy}
+      />
     </div>
   );
 }

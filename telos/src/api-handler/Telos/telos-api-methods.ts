@@ -13,7 +13,7 @@ class TelosAPI {
       Authorization: `Bearer ${this.key}`,
     };
   }
-
+  async uploadAgent(agentInfo: any) {}
   async allVaults() {
     try {
       const authParam = this.getAuthParam();

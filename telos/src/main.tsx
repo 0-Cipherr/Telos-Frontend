@@ -1,7 +1,7 @@
 import { PrivyProvider } from "@privy-io/react-auth";
-import { StrictMode } from "react";
+import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import App from "./App";
+import App, { PreviewApp } from "./App";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
 import { TxConfirmerProvider } from "./custom-contexts/TxConfirmerContext";
 import "./index.css";
@@ -25,31 +25,45 @@ if (insecure && !missing) {
   );
 }
 
-const disablePrivy = missing || insecure;
+const previewReason: "missing" | "insecure" | null = missing
+  ? "missing"
+  : insecure
+    ? "insecure"
+    : null;
+
+// Keep the app-level contexts inside PrivyProvider so hooks such as
+// `useWallets` (used by ModalContext) can see the connected wallet.
+function Providers({ children }: { children: ReactNode }) {
+  return (
+    <RegistryActionModalProvider>
+      <TxConfirmerProvider>{children}</TxConfirmerProvider>
+    </RegistryActionModalProvider>
+  );
+}
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <RegistryActionModalProvider>
-      <TxConfirmerProvider>
-        {disablePrivy ? (
+    {previewReason ? (
+      <Providers>
+        <PreviewApp reason={previewReason} />
+      </Providers>
+    ) : (
+      <PrivyProvider
+        appId={appId as string}
+        config={{
+          loginMethods: ["wallet", "sms"],
+          appearance: {
+            theme: "#f1f1ea",
+            accentColor: "#8fd400",
+            showWalletLoginFirst: true,
+            logo: "/icon.svg",
+          },
+        }}
+      >
+        <Providers>
           <App />
-        ) : (
-          <PrivyProvider
-            appId={appId}
-            config={{
-              loginMethods: ["wallet"],
-              appearance: {
-                theme: "#f1f1ea",
-                accentColor: "#8fd400",
-                showWalletLoginFirst: true,
-                logo: "/icon.svg",
-              },
-            }}
-          >
-            <App />
-          </PrivyProvider>
-        )}
-      </TxConfirmerProvider>
-    </RegistryActionModalProvider>
+        </Providers>
+      </PrivyProvider>
+    )}
   </StrictMode>,
 );

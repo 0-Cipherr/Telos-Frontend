@@ -1,5 +1,5 @@
-import { useEffect, useState, type FormEvent } from "react";
 import { NetworkArbitrumSepolia, NetworkBaseSepolia } from "@web3icons/react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRegistryActionModal } from "../../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../../custom-contexts/TxConfirmerContext";
 import { lockBodyScroll } from "../../utils/scrollLock";
@@ -22,13 +22,20 @@ function RegistryActionModal() {
     setFeeReceiver,
     setVaultTicker,
     setVsultChains,
+    strategy,
+    setStrategy,
   } = useRegistryActionModal();
   const { confirmTx } = useTxConfirmer();
 
   const [name, setName] = useState("");
   const [feeReceiver, setFeeReceiverValue] = useState("");
   const [ticker, setTicker] = useState("");
+  const [strategyValue, setStrategyValue] = useState(strategy);
   const [chains, setChains] = useState<string[]>([chainsAvailable[0].name]);
+
+  useEffect(() => {
+    setStrategyValue(strategy);
+  }, [strategy]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -63,6 +70,12 @@ function RegistryActionModal() {
         { label: "Vault", value: name.trim() || "Untitled vault" },
         { label: "Ticker", value: ticker.trim().toUpperCase() || "—" },
         { label: "Fee receiver", value: feeReceiver.trim() || "—" },
+        {
+          label: "Strategy",
+          value: strategyValue.includes("pragma solidity")
+            ? `Solidity contract · ${strategyValue.split("\n").length} lines · IStrategy`
+            : strategyValue.trim() || "—",
+        },
       ],
       note: "Testnet only. Deployment is simulated in this build — no contract call is made.",
     });
@@ -72,6 +85,7 @@ function RegistryActionModal() {
     setVaultName(name.trim());
     setFeeReceiver(feeReceiver.trim());
     setVaultTicker(ticker.trim().toUpperCase());
+    setStrategy(strategyValue.trim());
     setVsultChains(chains);
     setOpen(false);
   };
@@ -97,7 +111,6 @@ function RegistryActionModal() {
               ✕
             </button>
           </div>
-
           <div className="field">
             <label htmlFor="registry-vault-name">📛 Name</label>
             <input
@@ -112,7 +125,6 @@ function RegistryActionModal() {
               required
             />
           </div>
-
           <div className="field">
             <label htmlFor="registry-fee-receiver">💲 Fee receiver</label>
             <input
@@ -126,7 +138,6 @@ function RegistryActionModal() {
               required
             />
           </div>
-
           <div className="field">
             <label htmlFor="registry-ticker">💲 Ticker</label>
             <input
@@ -141,7 +152,63 @@ function RegistryActionModal() {
               required
             />
           </div>
-
+          <div className="field">
+            <label htmlFor="registry-strategy">Strategy</label>
+            <textarea
+              id="registry-strategy"
+              className="input strategy-input"
+              value={strategyValue}
+              rows={strategyValue.includes("pragma solidity") ? 10 : 3}
+              placeholder="Describe the strategy — or generate a contract with ✦ Create Strategy"
+              spellCheck={false}
+              onChange={(event) => setStrategyValue(event.target.value)}
+              required
+            />
+            <p className="field-hint">
+              Tip: use ✦ Create Strategy in the top bar to draft this with the
+              LLM strategist.
+            </p>
+          </div>{" "}
+          <div className="field">
+            <label htmlFor="registry-fee-receiver text-[12px]">
+              🤖 Enable Agent
+            </label>
+            <div className="flex gap-2">
+              <div className="flex gap-2">
+                {" "}
+                <label
+                  htmlFor="registry-fee-receiver"
+                  className="text-[10px] m-auto"
+                >
+                  Enable{" "}
+                </label>
+                <input type="checkbox" />
+              </div>
+              <input
+                id="registry-fee-receiver"
+                className="input"
+                type="text"
+                value={feeReceiver}
+                placeholder="OpenRouter API KEY"
+                spellCheck={false}
+                onChange={(event) => setFeeReceiverValue(event.target.value)}
+                required
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label htmlFor="registry-fee-receiver">🤖 Model Preference</label>
+            <input
+              id="registry-fee-receiver"
+              className="input"
+              type="text"
+              value={feeReceiver}
+              placeholder="Enter Model"
+              spellCheck={false}
+              onChange={(event) => setFeeReceiverValue(event.target.value)}
+              required
+            />
+          </div>{" "}
           <div className="field">
             <span className="lab">📠 Networks</span>
             <div className="chain-picker">
@@ -169,7 +236,6 @@ function RegistryActionModal() {
               are deployed cross-chain.
             </p>
           </div>
-
           <div className="modal-actions">
             <button type="submit" className="btn">
               Create vault

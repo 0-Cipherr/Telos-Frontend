@@ -7,6 +7,7 @@ type NavbarProps = {
   login: () => void;
   logout: () => void;
   address?: string;
+  onCreateStrategy: () => void;
 };
 
 export default function Navbar({
@@ -15,6 +16,7 @@ export default function Navbar({
   login,
   logout,
   address,
+  onCreateStrategy,
 }: NavbarProps) {
   const short = address
     ? `${address.slice(0, 6)}…${address.slice(-4)}`
@@ -40,7 +42,7 @@ export default function Navbar({
             <span className="sep" aria-hidden="true">
               |
             </span>
-            <a href="#calculator">Calculator</a>
+            <a href="#calculator">Governance</a>
             <span className="sep" aria-hidden="true">
               |
             </span>
@@ -60,6 +62,20 @@ export default function Navbar({
             >
               Create Vault
             </a>
+            <span className="sep" aria-hidden="true">
+              |
+            </span>
+            <button
+              type="button"
+              className="nav-strategy"
+              onClick={onCreateStrategy}
+              title="Draft a strategy with the LLM strategist"
+            >
+              <span className="nav-strategy-spark" aria-hidden="true">
+                ✦
+              </span>
+              Create Strategy
+            </button>
           </nav>
           <div className="top-actions">
             <ThemeToggle />
