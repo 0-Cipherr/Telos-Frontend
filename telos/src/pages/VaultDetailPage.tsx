@@ -5,11 +5,13 @@ import { DEPOSIT_CHAIN } from "../chains";
 import { ChainIcon } from "../components/ChainBadge";
 import CreatorAvatar from "../components/CreatorAvatar";
 import Footer from "../components/Footer";
+import LLMLogo from "../components/LLMLogo";
 import Navbar from "../components/Navbar";
 import VaultSparkline from "../components/VaultSparkline";
 import { useCreatedVaults } from "../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../custom-contexts/TxConfirmerContext";
+import { describeLLM } from "../llm-models";
 import {
   LAUNCHPADS,
   creatorIdentity,
@@ -95,6 +97,8 @@ export default function VaultDetailPage({
     launchpadItems.map((item) => `${item.emoji} ${item.name}`).join(" · ") ||
     "—";
   const thesisPost = AI_FORUM_POSTS.find((post) => post.vaultId === vault.id);
+  const runningModel = describeLLM(vault.agentModel);
+  const strategyModel = describeLLM(vault.strategyModel);
 
   const handleDeposit = () => {
     void confirmTx({
@@ -297,6 +301,69 @@ export default function VaultDetailPage({
           </section>
 
           <aside className="vault-detail-side">
+            <section className="panel" aria-labelledby="vault-models-heading">
+              <div className="vault-panel-head">
+                <h2 id="vault-models-heading">AI models</h2>
+                <span className="sample-tag">
+                  {runningModel || strategyModel ? "LLM STACK" : "NOT SET"}
+                </span>
+              </div>
+              <div className="vault-model-list">
+                <div className="vault-model-row">
+                  {runningModel ? (
+                    <LLMLogo
+                      provider={runningModel.providerId}
+                      size={26}
+                      title={`${runningModel.provider} ${runningModel.name}`}
+                    />
+                  ) : (
+                    <span className="llm-logo llm-logo--empty" aria-hidden="true">
+                      —
+                    </span>
+                  )}
+                  <div className="vault-model-copy">
+                    <b>{runningModel ? runningModel.name : "No agent running"}</b>
+                    <span>
+                      {runningModel
+                        ? `${runningModel.provider}${
+                            runningModel.free ? " · free tier" : ""
+                          }`
+                        : "Strategy runs on fixed rules"}
+                    </span>
+                  </div>
+                  <span className="vault-model-role">RUNNING</span>
+                </div>
+                <div className="vault-model-row">
+                  {strategyModel ? (
+                    <LLMLogo
+                      provider={strategyModel.providerId}
+                      size={26}
+                      title={`${strategyModel.provider} ${strategyModel.name}`}
+                    />
+                  ) : (
+                    <span className="llm-logo llm-logo--empty" aria-hidden="true">
+                      —
+                    </span>
+                  )}
+                  <div className="vault-model-copy">
+                    <b>{strategyModel ? strategyModel.name : "No model recorded"}</b>
+                    <span>
+                      {strategyModel
+                        ? `${strategyModel.provider}${
+                            strategyModel.free ? " · free tier" : ""
+                          }`
+                        : "Creator-authored contract"}
+                    </span>
+                  </div>
+                  <span className="vault-model-role">STRATEGY</span>
+                </div>
+              </div>
+              <p className="field-hint">
+                The running model operates the vault between harvests. The
+                strategy model authored the attached contract.
+              </p>
+            </section>
+
             <section className="panel" aria-labelledby="vault-chains-heading">
               <div className="vault-panel-head">
                 <h2 id="vault-chains-heading">Chains available</h2>

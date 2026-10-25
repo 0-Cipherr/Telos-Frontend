@@ -1,7 +1,8 @@
 import TelosAPI from "../src/api-handler/Telos/telos-api-methods";
 import type LLM from "../src/interfaces/LLM";
+import { ModelManager } from "../src/onchain/ModelManager";
 
-export class OpenRouter implements LLM {
+export class OpenRouter extends ModelManager implements LLM {
   endpoint: any;
   // endpoint: any = "https://openrouter.ai/api/v1/chat/completions";
   // createKeyEndpoint: any = "https://openrouter.ai/api/v1/keys";
@@ -14,11 +15,16 @@ export class OpenRouter implements LLM {
     _model: any,
     _managementKey: any,
     _telos: TelosAPI,
+    _models: ModelManager,
   ) {
+    super();
     this.apiKey = _apiKey;
     this.managementkey = _managementKey;
     this.telos = _telos;
   }
+  async updateModel() {}
+  async addModel() {}
+  async deleteModel() {}
 
   setAPI(_telos: TelosAPI) {
     this.telos = _telos;

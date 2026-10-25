@@ -150,6 +150,7 @@ function llmProxy(): Plugin {
     // response or a reason to try the next model.
     let upstream: Response | undefined;
     let lastError = { status: 502, message: "no model available" };
+    let servedModel = chain[0] ?? "";
 
     for (const [index, candidate] of chain.entries()) {
       let reasoningHint = true;
@@ -191,6 +192,7 @@ function llmProxy(): Plugin {
 
         if (response.ok && response.body) {
           upstream = response;
+          servedModel = candidate;
           break;
         }
 
@@ -235,6 +237,7 @@ function llmProxy(): Plugin {
         upstream.headers.get("content-type") ?? "application/json",
       );
       res.setHeader("Cache-Control", "no-store");
+      res.setHeader("X-Telos-Model", servedModel);
       res.end(body);
       return;
     }
@@ -246,6 +249,7 @@ function llmProxy(): Plugin {
       "Cache-Control": "no-cache, no-transform",
       Connection: "keep-alive",
       "X-Accel-Buffering": "no",
+      "X-Telos-Model": servedModel,
     });
     // Stop pumping if the browser goes away (modal closed, chat reset, etc.).
     res.on("close", () => {

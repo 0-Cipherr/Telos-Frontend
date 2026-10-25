@@ -310,6 +310,7 @@ function buildStrategy(input: Draft): StrategySpec {
     prompt,
     code,
     source: "local",
+    model: "telos-local",
     validation: validateStrategySource(code),
     audit: {
       status: "unavailable",
@@ -738,6 +739,9 @@ export default function StrategyChatModal({
 
     try {
       const direct = llmReady;
+      const requestModel = direct
+        ? model.trim() || DEFAULT_MODEL
+        : server.model || "telos-local";
       const response = await fetch(direct ? DIRECT_URL : PROXY_URL, {
         method: "POST",
         headers: direct
@@ -778,6 +782,11 @@ export default function StrategyChatModal({
         throw new Error(describeHttpError(response.status, detail));
       }
       if (!response.body) throw new Error("provider returned no stream");
+
+      // The dev proxy reports which model in the failover chain actually served
+      // the request. Direct BYOK calls fall back to the requested model.
+      const servedModel =
+        response.headers.get("x-telos-model") || requestModel;
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -850,7 +859,7 @@ export default function StrategyChatModal({
       if (stale()) return;
       if (!answer.trim()) throw new Error("model returned an empty reply");
 
-      const parsed = parseStrategyReply(answer);
+      const parsed = parseStrategyReply(answer, servedModel);
       const finalText =
         parsed.text || (parsed.spec ? "contract compiled." : "reply complete.");
       let cardMessageId = streamedId;

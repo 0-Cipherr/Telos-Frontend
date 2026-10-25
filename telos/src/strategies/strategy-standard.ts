@@ -47,6 +47,8 @@ export type StrategySpec = {
   code: string;
   /** Where the contract came from: the linked model or the local template. */
   source?: "llm" | "local";
+  /** Model id that authored the contract, when one was used. */
+  model?: string;
   validation?: StrategyValidation;
   /** Independent ETHSKILLS audit. Only a passing audit unlocks use. */
   audit?: StrategyAudit;
@@ -251,7 +253,10 @@ function buildPromptSummary(spec: Omit<StrategySpec, "prompt">): string {
   ].join("\n");
 }
 
-export function parseStrategyReply(content: string): ParsedStrategyReply {
+export function parseStrategyReply(
+  content: string,
+  model?: string,
+): ParsedStrategyReply {
   const text = visibleAnswer(content);
   const code = extractStrategyCode(content);
   const raw = extractMarkedJson(content, "META");
@@ -288,6 +293,7 @@ export function parseStrategyReply(content: string): ParsedStrategyReply {
     prompt: "",
     code,
     source: "llm",
+    model,
     validation,
   };
   spec.prompt = buildPromptSummary(spec);

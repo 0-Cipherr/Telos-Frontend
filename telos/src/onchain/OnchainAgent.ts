@@ -14,7 +14,6 @@ export class OnchainAgentManager extends Agent {
     this.Agents = new Array<Agent>();
     this.currentAgentID = 0;
   }
-
   setLLM(_llm: OpenRouter) {
     this.llm = _llm;
   }

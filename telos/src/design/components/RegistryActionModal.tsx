@@ -6,6 +6,7 @@ import { useCreatedVaults } from "../../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../../custom-contexts/TxConfirmerContext";
 import { validateStrategySource } from "../../strategies/strategy-standard";
+import { llmLabel } from "../../llm-models";
 import { lockBodyScroll } from "../../utils/scrollLock";
 import {
   CREATOR_REWARDS,
@@ -224,6 +225,10 @@ export default function RegistryActionModal({ address }: Props) {
             ? `${contractName || "Contract"} · ${lineCount} lines · IStrategy`
             : "Text strategy (no Solidity attached)",
         },
+        {
+          label: "Strategy model",
+          value: strategySpec?.model ? llmLabel(strategySpec.model) : "not recorded",
+        },
         { label: "Networks", value: `${chains.length} EVM networks` },
         { label: "Launchpads", value: launchpadNames },
         {
@@ -297,6 +302,7 @@ export default function RegistryActionModal({ address }: Props) {
       showCreatorRewards,
       contractCode: hasSolidity ? strategyValue : undefined,
       contractName: contractName || undefined,
+      strategyModel: strategySpec?.model,
       agentEnabled: enableAgent,
       agentModel: enableAgent ? agentModel : undefined,
     };

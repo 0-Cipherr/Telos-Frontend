@@ -5021,3 +5021,79 @@ input[type="range"] {
     font-size: 23px;
   }
 }
+
+/* ---- LLM badges (vault models) ------------------------------------------ */
+.llm-logo {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  line-height: 0;
+}
+
+.llm-logo svg {
+  display: block;
+}
+
+.llm-logo--empty {
+  width: 26px;
+  height: 26px;
+  background: var(--input-bg);
+  color: var(--muted);
+  font: 700 11px/1 "Courier New", monospace;
+}
+
+.vault-model-list {
+  display: grid;
+  gap: 0;
+}
+
+.vault-model-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px dotted var(--border);
+  padding: 6px 0;
+}
+
+.vault-model-row:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+.vault-model-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.vault-model-copy b {
+  display: block;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-model-copy span {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font: 8px/1.3 "Courier New", monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-model-role {
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--row-alt);
+  padding: 1px 4px;
+  color: var(--lime);
+  font: 700 7.5px/1.2 "Courier New", monospace;
+  letter-spacing: 0.04em;
+}

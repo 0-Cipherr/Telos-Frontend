@@ -54,7 +54,10 @@ export type Vault = {
   contractName?: string;
   /** Optional onchain strategy agent settings selected at creation. */
   agentEnabled?: boolean;
+  /** Model that runs the vault's onchain strategy agent between harvests. */
   agentModel?: string;
+  /** Model that authored the attached strategy contract. */
+  strategyModel?: string;
 };
 
 export type VaultFilterKind = "all" | VaultKind;
@@ -164,6 +167,8 @@ export const VAULTS: Vault[] = [
     color: "#3b82f6",
     h: [3, 4, 4, 6, 5, 7, 8, 8, 10, 11],
     status: "live",
+    agentModel: "openai/gpt-4o-mini",
+    strategyModel: "anthropic/claude-3.5-sonnet",
     createdAt: "2026-02-14",
     creatorRewards: "stake",
     stakeEnabled: true,
@@ -195,6 +200,8 @@ export const VAULTS: Vault[] = [
     color: "#2dd4bf",
     h: [5, 5, 6, 6, 7, 7, 8, 8, 9, 9],
     status: "live",
+    agentModel: "google/gemini-2.5-flash",
+    strategyModel: "anthropic/claude-3.5-sonnet",
     createdAt: "2026-01-22",
   },
   {
@@ -224,6 +231,8 @@ export const VAULTS: Vault[] = [
     color: "#60a5fa",
     h: [4, 4, 5, 5, 5, 6, 6, 6, 7, 7],
     status: "live",
+    agentModel: "openai/gpt-4.1-mini",
+    strategyModel: "openai/gpt-4o",
     createdAt: "2025-12-08",
   },
   {
@@ -253,6 +262,8 @@ export const VAULTS: Vault[] = [
     color: "#a78bfa",
     h: [4, 4, 3, 4, 4, 5, 4, 5, 5, 5],
     status: "live",
+    agentModel: "meta-llama/llama-3.3-70b-instruct",
+    strategyModel: "meta-llama/llama-3.3-70b-instruct",
     createdAt: "2025-11-30",
   },
   {
@@ -282,6 +293,8 @@ export const VAULTS: Vault[] = [
     color: "#38bdf8",
     h: [2, 4, 3, 6, 7, 6, 9, 10, 9, 12],
     status: "live",
+    agentModel: "deepseek/deepseek-chat-v3",
+    strategyModel: "deepseek/deepseek-chat-v3",
     createdAt: "2026-03-03",
   },
   {
@@ -311,6 +324,8 @@ export const VAULTS: Vault[] = [
     color: "#f59e0b",
     h: [3, 5, 4, 6, 6, 7, 8, 7, 9, 9],
     status: "live",
+    agentModel: "qwen/qwen-2.5-coder-32b-instruct",
+    strategyModel: "qwen/qwen-2.5-coder-32b-instruct",
     createdAt: "2026-02-27",
   },
   {
@@ -340,6 +355,8 @@ export const VAULTS: Vault[] = [
     color: "#ec6a4c",
     h: [2, 3, 5, 4, 6, 7, 7, 8, 9, 9],
     status: "live",
+    agentModel: "mistralai/mistral-large",
+    strategyModel: "mistralai/mistral-large",
     createdAt: "2026-04-01",
   },
   {
@@ -369,6 +386,8 @@ export const VAULTS: Vault[] = [
     color: "#4ade80",
     h: [4, 4, 5, 6, 5, 6, 7, 7, 8, 8],
     status: "live",
+    agentModel: "cohere/north-mini-code:free",
+    strategyModel: "cohere/north-mini-code:free",
     createdAt: "2026-03-19",
   },
   {
@@ -398,6 +417,8 @@ export const VAULTS: Vault[] = [
     color: "#22d3ee",
     h: [3, 3, 5, 6, 5, 7, 8, 8, 9, 10],
     status: "live",
+    agentModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
+    strategyModel: "nvidia/nemotron-3-ultra-550b-a55b:free",
     createdAt: "2026-04-11",
   },
   {
@@ -427,6 +448,8 @@ export const VAULTS: Vault[] = [
     color: "#8fd400",
     h: [4, 4, 5, 5, 6, 6, 7, 7, 8, 9],
     status: "live",
+    agentModel: "telos/strategist-7b",
+    strategyModel: "telos/strategist-7b",
     createdAt: "2026-04-20",
   },
   {
@@ -456,6 +479,8 @@ export const VAULTS: Vault[] = [
     color: "#818cf8",
     h: [3, 4, 4, 5, 5, 5, 6, 6, 7, 7],
     status: "live",
+    agentModel: "openai/gpt-4o-mini",
+    strategyModel: "google/gemini-2.5-pro",
     createdAt: "2026-03-28",
   },
   {
@@ -485,6 +510,8 @@ export const VAULTS: Vault[] = [
     color: "#e84142",
     h: [4, 5, 5, 6, 6, 6, 7, 7, 8, 8],
     status: "live",
+    agentModel: "anthropic/claude-3.5-haiku",
+    strategyModel: "anthropic/claude-3.5-sonnet",
     createdAt: "2026-04-06",
   },
   {
@@ -514,6 +541,8 @@ export const VAULTS: Vault[] = [
     color: "#a3e635",
     h: [5, 5, 6, 6, 7, 7, 8, 9, 9, 10],
     status: "live",
+    agentModel: "nvidia/nemotron-3.5-lightning:free",
+    strategyModel: "openai/gpt-4o",
     createdAt: "2026-04-22",
   },
 ];
