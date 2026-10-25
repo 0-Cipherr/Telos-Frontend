@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import { useStrategyLauncher } from "../custom-contexts/StrategyLauncherContext";
+import CreatorAvatar from "./CreatorAvatar";
 import ThemeToggle from "./ThemeToggle";
 
 type NavbarProps = {
@@ -94,6 +95,21 @@ export default function Navbar({
           </button>
         </nav>
         <div className="top-actions">
+          {authenticated && address ? (
+            <Link
+              to={`/creators/${encodeURIComponent(address)}`}
+              className={`nav-profile${
+                location.pathname.startsWith("/creators") ||
+                location.pathname.startsWith("/profile")
+                  ? " is-active"
+                  : ""
+              }`}
+              title="Open your creator profile"
+            >
+              <CreatorAvatar address={address} size={18} />
+              <span>Profile</span>
+            </Link>
+          ) : null}
           <ThemeToggle />
           {action}
         </div>

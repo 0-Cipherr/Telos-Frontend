@@ -1,11 +1,14 @@
 import { Link } from "react-router-dom";
 import {
+  creatorIdentity,
+  creatorProfilePath,
   formatUsd,
   formatUsdCompact,
   weeklyEarnings,
   type Vault,
 } from "../vaults";
 import { ChainIcon } from "./ChainBadge";
+import CreatorAvatar from "./CreatorAvatar";
 import VaultSparkline from "./VaultSparkline";
 
 type Props = {
@@ -86,6 +89,12 @@ export default function VaultTile({ vault, own = false }: Props) {
             {vault.chains.length} EVM {vault.chains.length === 1 ? "chain" : "chains"}
           </span>
         </div>
+      </div>
+
+      <div className="vault-tile__creator">
+        <CreatorAvatar address={creatorIdentity(vault)} size={20} />
+        <span>BY</span>
+        <Link to={creatorProfilePath(vault)}>{vault.creator}</Link>
       </div>
 
       <div className="vault-tile__strategy">

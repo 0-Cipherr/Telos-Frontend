@@ -2,8 +2,15 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { DEPOSIT_CHAIN } from "../chains";
 import type { Vault, VaultFilterKind } from "../vaults";
-import { formatUsd, tvlValue, weeklyEarnings } from "../vaults";
+import {
+  creatorIdentity,
+  creatorProfilePath,
+  formatUsd,
+  tvlValue,
+  weeklyEarnings,
+} from "../vaults";
 import { useTxConfirmer } from "../custom-contexts/TxConfirmerContext";
+import CreatorAvatar from "./CreatorAvatar";
 
 type SortKey = "apy" | "tvl" | "fee";
 type SortDir = "asc" | "desc";
@@ -121,7 +128,12 @@ function VaultRow({
       </td>
       <td className="nowrap">${vault.tvl}</td>
       <td className="nowrap">{vault.fee}%</td>
-      <td className="creator">{vault.creator}</td>
+      <td className="creator">
+        <Link className="table-creator" to={creatorProfilePath(vault)}>
+          <CreatorAvatar address={creatorIdentity(vault)} size={18} />
+          {vault.creator}
+        </Link>
+      </td>
       <td>
         <span className="row-actions">
           <button

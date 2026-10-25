@@ -33,6 +33,8 @@ export type Vault = {
   tvlUsd: number;
   fee: number;
   creator: string;
+  /** Full creator address when available (used by the creator profile). */
+  creatorAddress?: string;
   color: string;
   h: number[];
   status?: VaultStatus;
@@ -43,6 +45,10 @@ export type Vault = {
   launchpads?: string[];
   /** Where the creator's share of yield is routed. */
   creatorRewards?: CreatorRewardMode;
+  /** Whether vault shares can be staked from the vault page. */
+  stakeEnabled?: boolean;
+  /** Whether the creator-rewards box is shown on the vault page. */
+  showCreatorRewards?: boolean;
   /** Contract source attached from the strategy lab. */
   contractCode?: string;
   contractName?: string;
@@ -159,6 +165,9 @@ export const VAULTS: Vault[] = [
     h: [3, 4, 4, 6, 5, 7, 8, 8, 10, 11],
     status: "live",
     createdAt: "2026-02-14",
+    creatorRewards: "stake",
+    stakeEnabled: true,
+    showCreatorRewards: true,
   },
   {
     id: "TL-002",
@@ -563,4 +572,25 @@ export function median(values: number[]): number {
   return sorted.length % 2 === 1
     ? sorted[middle]
     : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/** Full creator address when known, otherwise the stored display address. */
+export function creatorIdentity(vault: Vault): string {
+  return vault.creatorAddress || vault.creator;
+}
+
+export function creatorProfilePath(vault: Vault): string {
+  return `/creators/${encodeURIComponent(creatorIdentity(vault))}`;
+}
+
+/** Estimated annual creator share: TVL × APY × creator fee. */
+export function annualCreatorEarnings(vault: Vault): number {
+  if (!Number.isFinite(vault.tvlUsd) || vault.tvlUsd <= 0) return 0;
+  if (!Number.isFinite(vault.apy) || vault.apy <= 0) return 0;
+  return vault.tvlUsd * (vault.apy / 100) * (vault.fee / 100);
+}
+
+export function shortAddress(value: string, head = 6, tail = 4): string {
+  if (value.length <= head + tail + 1) return value;
+  return `${value.slice(0, head)}…${value.slice(-tail)}`;
 }

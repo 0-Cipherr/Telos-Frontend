@@ -72,6 +72,8 @@ export default function RegistryActionModal({ address }: Props) {
   const [launchpads, setLaunchpads] = useState<string[]>(["pons"]);
   const [creatorRewards, setCreatorRewards] =
     useState<CreatorRewardMode>("fees");
+  const [stakeEnabled, setStakeEnabled] = useState(true);
+  const [showCreatorRewards, setShowCreatorRewards] = useState(true);
   const [addresses, setAddresses] = useState<string[]>([""]);
   const [enableAgent, setEnableAgent] = useState(false);
   const [agentKey, setAgentKey] = useState("");
@@ -91,6 +93,8 @@ export default function RegistryActionModal({ address }: Props) {
     setChains(vaultChains.length ? vaultChains : ["Base"]);
     setLaunchpads(vaultLaunchpads.length ? vaultLaunchpads : ["pons"]);
     setCreatorRewards(vaultCreatorRewards);
+    setStakeEnabled(true);
+    setShowCreatorRewards(true);
     const seededAddresses =
       vaultAddresses.length > 0
         ? vaultAddresses
@@ -227,6 +231,15 @@ export default function RegistryActionModal({ address }: Props) {
           value: creatorRewardLabel(creatorRewards),
         },
         {
+          label: "Token features",
+          value: [
+            stakeEnabled ? "staking" : null,
+            showCreatorRewards ? "creator rewards" : null,
+          ]
+            .filter(Boolean)
+            .join(" · ") || "none",
+        },
+        {
           label: "Address array",
           value: `${cleanAddresses.length} address${
             cleanAddresses.length === 1 ? "" : "es"
@@ -272,6 +285,7 @@ export default function RegistryActionModal({ address }: Props) {
       tvlUsd: 0,
       fee,
       creator: shortAddress(trimmedReceiver),
+      creatorAddress: trimmedReceiver,
       color: "#8fd400",
       h: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
       status: "draft",
@@ -279,6 +293,8 @@ export default function RegistryActionModal({ address }: Props) {
       addresses: cleanAddresses,
       launchpads,
       creatorRewards,
+      stakeEnabled,
+      showCreatorRewards,
       contractCode: hasSolidity ? strategyValue : undefined,
       contractName: contractName || undefined,
       agentEnabled: enableAgent,
@@ -604,6 +620,65 @@ export default function RegistryActionModal({ address }: Props) {
                     </label>
                   );
                 })}
+              </div>
+            </fieldset>
+
+            <fieldset className="registry-group">
+              <legend>
+                <span>✨ Token features</span>
+                <span className="registry-count">
+                  {[stakeEnabled, showCreatorRewards].filter(Boolean).length}{" "}
+                  selected
+                </span>
+              </legend>
+              <p className="field-hint registry-group-hint">
+                Choose what holders see on the vault page. Enable share staking,
+                surface creator rewards, or both.
+              </p>
+              <div className="feature-picker">
+                <label
+                  className={`feature-option${stakeEnabled ? " is-on" : ""}`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={stakeEnabled}
+                    onChange={(event) => setStakeEnabled(event.target.checked)}
+                  />
+                  <span className="chain-check" aria-hidden="true" />
+                  <span className="reward-emoji" aria-hidden="true">
+                    🥩
+                  </span>
+                  <span className="reward-copy">
+                    <b>Stake vault shares</b>
+                    <span>
+                      Let holders stake this vault token and compound from the
+                      vault page.
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={`feature-option${
+                    showCreatorRewards ? " is-on" : ""
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={showCreatorRewards}
+                    onChange={(event) =>
+                      setShowCreatorRewards(event.target.checked)
+                    }
+                  />
+                  <span className="chain-check" aria-hidden="true" />
+                  <span className="reward-emoji" aria-hidden="true">
+                    🎁
+                  </span>
+                  <span className="reward-copy">
+                    <b>Show creator rewards</b>
+                    <span>
+                      Display where the creator&apos;s share of yield is routed.
+                    </span>
+                  </span>
+                </label>
               </div>
             </fieldset>
 

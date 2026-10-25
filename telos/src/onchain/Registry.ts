@@ -26,7 +26,7 @@ export class Registry {
   async deployHubVault(owner: any, deployParams: any, isAgent: boolean) {
     try {
       if (isAgent) {
-        await this.createAgent(deployParams[2], deployParams[3]);
+        // await concurrency to handle multple scheduled tscthis.createAgent(deployParams[2], deployParams[3]);
       }
       deployParams.fees.protocolFee = this.protocolFee;
       deployParams.fees.protocolFeeReciever = this.protocolFeeReciever;

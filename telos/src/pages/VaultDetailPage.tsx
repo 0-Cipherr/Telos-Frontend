@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { AI_FORUM_POSTS } from "../ai-forum";
 import { DEPOSIT_CHAIN } from "../chains";
 import { ChainIcon } from "../components/ChainBadge";
+import CreatorAvatar from "../components/CreatorAvatar";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import VaultSparkline from "../components/VaultSparkline";
@@ -11,6 +12,8 @@ import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../custom-contexts/TxConfirmerContext";
 import {
   LAUNCHPADS,
+  creatorIdentity,
+  creatorProfilePath,
   creatorRewardLabel,
   formatUsd,
   formatUsdCompact,
@@ -159,6 +162,13 @@ export default function VaultDetailPage({
                 {vault.chains.length} EVM{" "}
                 {vault.chains.length === 1 ? "CHAIN" : "CHAINS"}
               </p>
+              <Link className="vault-creator-chip" to={creatorProfilePath(vault)}>
+                <CreatorAvatar address={creatorIdentity(vault)} size={24} />
+                <span>
+                  <b>{vault.creator}</b>
+                  <small>VIEW CREATOR PROFILE</small>
+                </span>
+              </Link>
             </div>
           </div>
 
@@ -351,6 +361,51 @@ export default function VaultDetailPage({
               </Link>
             </section>
 
+            <section className="panel token-features" aria-labelledby="vault-features-heading">
+              <div className="vault-panel-head">
+                <h2 id="vault-features-heading">Token features</h2>
+                <span className="sample-tag">ONCHAIN</span>
+              </div>
+              <div className="token-feature-list">
+                <div className="token-feature-row">
+                  <span className="token-feature-icon" aria-hidden="true">
+                    🥩
+                  </span>
+                  <div>
+                    <b>Stake vault shares</b>
+                    <span>
+                      {vault.stakeEnabled
+                        ? "Holders can stake this vault token to compound yield."
+                        : "Share staking is not enabled for this vault."}
+                    </span>
+                  </div>
+                  <span
+                    className={`token-feature-state${
+                      vault.stakeEnabled ? " is-on" : ""
+                    }`}
+                  >
+                    {vault.stakeEnabled ? "READY" : "OFF"}
+                  </span>
+                </div>
+                {vault.showCreatorRewards ? (
+                  <div className="token-feature-row">
+                    <span className="token-feature-icon" aria-hidden="true">
+                      🎁
+                    </span>
+                    <div>
+                      <b>Creator rewards</b>
+                      <span>{creatorRewardLabel(vault.creatorRewards)}</span>
+                    </div>
+                    <span className="token-feature-state is-on">SHOWN</span>
+                  </div>
+                ) : null}
+              </div>
+              <p className="field-hint">
+                Features are set when the vault is created and can be surfaced
+                or hidden from the vault page.
+              </p>
+            </section>
+
             <section className="panel" aria-labelledby="vault-registry-heading">
               <div className="vault-panel-head">
                 <h2 id="vault-registry-heading">Vault file</h2>
@@ -363,7 +418,15 @@ export default function VaultDetailPage({
                 </div>
                 <div>
                   <dt>CREATOR</dt>
-                  <dd>{vault.creator}</dd>
+                  <dd>
+                    <Link
+                      className="vault-file-creator"
+                      to={creatorProfilePath(vault)}
+                    >
+                      <CreatorAvatar address={creatorIdentity(vault)} size={18} />
+                      {vault.creator}
+                    </Link>
+                  </dd>
                 </div>
                 <div>
                   <dt>PRIMARY CHAIN</dt>

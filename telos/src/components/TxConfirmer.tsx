@@ -3,6 +3,7 @@ import { NetworkBase } from "@web3icons/react";
 import { findChain } from "../chains";
 import type { TxRequest } from "../custom-contexts/TxConfirmerContext";
 import { lockBodyScroll } from "../utils/scrollLock";
+import ApplePayButton from "./ApplePayButton";
 
 type ChainMeta = {
   label: string;
@@ -50,7 +51,9 @@ type Status = "review" | "pending" | "success" | "error";
 
 export default function TxConfirmer({ request, onDone }: Props) {
   const [status, setStatus] = useState<Status>("review");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(() =>
+    request.kind === "deposit" ? "1000" : "",
+  );
   const [confirmedSteps, setConfirmedSteps] = useState(0);
   const [hashes, setHashes] = useState<Array<{ chain: string; hash: string }>>(
     [],
@@ -267,13 +270,20 @@ export default function TxConfirmer({ request, onDone }: Props) {
             </div>
 
             <div className="modal-actions">
-              <button type="submit" className="btn" disabled={!amountValid}>
-                {isDeposit
-                  ? "Confirm deposit"
-                  : chains.length > 1
+              {isDeposit ? (
+                <>
+                  <button type="submit" className="btn" disabled={!amountValid}>
+                    Confirm deposit
+                  </button>
+                  <ApplePayButton type="submit" disabled={!amountValid} />
+                </>
+              ) : (
+                <button type="submit" className="btn" disabled={!amountValid}>
+                  {chains.length > 1
                     ? `Confirm ${chains.length} deployments`
                     : "Confirm deployment"}
-              </button>
+                </button>
+              )}
               <button
                 type="button"
                 className="btn btn-plain"

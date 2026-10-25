@@ -1,11 +1,15 @@
 import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
+import CreatorAvatar from "../components/CreatorAvatar";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
 import VaultTile from "../components/VaultTile";
 import { useCreatedVaults } from "../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import {
+  annualCreatorEarnings,
+  creatorIdentity,
+  formatUsd,
   formatUsdCompact,
   median,
   type VaultKind,
@@ -112,6 +116,39 @@ export default function VaultsPage({
     };
   }, [allVaults]);
 
+  const creators = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        identity: string;
+        display: string;
+        vaults: number;
+        tvl: number;
+        earnings: number;
+      }
+    >();
+
+    for (const vault of allVaults) {
+      const identity = creatorIdentity(vault);
+      const key = identity.toLowerCase();
+      const entry =
+        map.get(key) ??
+        {
+          identity,
+          display: vault.creator,
+          vaults: 0,
+          tvl: 0,
+          earnings: 0,
+        };
+      entry.vaults += 1;
+      entry.tvl += vault.tvlUsd;
+      entry.earnings += annualCreatorEarnings(vault);
+      map.set(key, entry);
+    }
+
+    return [...map.values()].sort((a, b) => b.tvl - a.tvl).slice(0, 6);
+  }, [allVaults]);
+
   const resetFilters = () => {
     setQuery("");
     setChain("all");
@@ -189,6 +226,37 @@ export default function VaultsPage({
               <dd>{formatUsdCompact(notes.totalTvl)}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="section" id="creators" aria-labelledby="creators-heading">
+          <div className="section-title">
+            <h2 id="creators-heading">Creators</h2>
+            <span className="sample-tag">PFPS GENERATED FROM ADDRESS</span>
+          </div>
+          <div className="creator-strip">
+            {creators.map((creator) => (
+              <Link
+                key={creator.identity}
+                className="creator-card"
+                to={`/creators/${encodeURIComponent(creator.identity)}`}
+              >
+                <CreatorAvatar address={creator.identity} size={42} />
+                <span className="creator-card-copy">
+                  <b>{creator.display}</b>
+                  <span>
+                    {creator.vaults} {creator.vaults === 1 ? "vault" : "vaults"} ·{" "}
+                    {formatUsdCompact(creator.tvl)} TVL
+                  </span>
+                  <span className="creator-card-earn">
+                    {formatUsd(creator.earnings, 2)}/yr creator rewards
+                  </span>
+                </span>
+                <span className="creator-card-arrow" aria-hidden="true">
+                  →
+                </span>
+              </Link>
+            ))}
+          </div>
         </section>
 
         <section className="section" aria-labelledby="vault-index-heading">

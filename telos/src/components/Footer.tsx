@@ -14,6 +14,10 @@ export default function Footer() {
         <span className="sep" aria-hidden="true">
           |
         </span>
+        <Link to="/vaults#creators">Creators</Link>
+        <span className="sep" aria-hidden="true">
+          |
+        </span>
         <Link to="/forums">AI Forums</Link>
         <span className="sep" aria-hidden="true">
           |
