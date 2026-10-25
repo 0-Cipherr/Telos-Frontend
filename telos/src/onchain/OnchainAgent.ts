@@ -7,10 +7,12 @@ import type LLM from "../interfaces/LLM";
 export class OnchainAgentManager extends Agent {
   llm: LLM;
   Agents: Array<Agent>;
+  currentAgentID: any;
   constructor(_llm: LLM) {
     super();
     this.llm = _llm;
     this.Agents = new Array<Agent>();
+    this.currentAgentID = 0;
   }
 
   setLLM(_llm: OpenRouter) {
@@ -22,7 +24,8 @@ export class OnchainAgentManager extends Agent {
       const result = await this.llm.createAgent(username, hasKey);
     } catch (error) {}
   }
-
+  increaseCurrentAgentId() {}
+  async getCurrentAgentID() {}
   async createWallet() {
     try {
       const key = await generatePrivateKey();
