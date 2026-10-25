@@ -1,103 +1,111 @@
-import { useWallets } from "@privy-io/react-auth";
 import {
   createContext,
+  useCallback,
   useContext,
-  useEffect,
   useState,
   type ReactNode,
 } from "react";
-import { parseEther } from "viem";
-import { baseSepolia } from "viem/chains";
-import { OnchainAgentManager } from "../onchain/OnchainAgent";
-import { Registry } from "../onchain/Registry";
-import type { address } from "../types/solidity-types";
+import type { StrategySpec } from "../strategies/strategy-standard";
+import type { CreatorRewardMode } from "../vaults";
 
-// 1. Explicitly type what data the context holds
-interface RegistryContextType {
+export type RegistryContextType = {
   open: boolean;
   setOpen: (open: boolean) => void;
-  owner: address | undefined;
-  setOwner: (owner: any) => void;
-  deployParams: Uint8Array | undefined;
-  setDeployParams: (params: Uint8Array) => void;
-  setFeeReceiver: (params: any) => void;
-  createVault: (owner: address, deployParams: Uint8Array) => Promise<unknown>;
-  feeReceiver: any;
-  vaultName: any;
-  setVaultName: (params: any) => void;
-  vaultTicker: any;
-  setVaultTicker: (params: any) => void;
-  vaultChains: any;
-  setVsultChains: (params: any) => void;
+
+  owner?: string;
+  setOwner: (owner?: string) => void;
+
+  vaultName: string;
+  setVaultName: (name: string) => void;
+
+  vaultTicker: string;
+  setVaultTicker: (ticker: string) => void;
+
+  vaultDescription: string;
+  setVaultDescription: (description: string) => void;
+
+  /** Networks selected in the launchpad picker. */
+  vaultChains: string[];
+  setVaultChains: (chains: string[]) => void;
+
+  /**
+   * The `address[]` parameter passed to vault creation.
+   * The first entry is normally the connected wallet.
+   */
+  vaultAddresses: string[];
+  setVaultAddresses: (addresses: string[]) => void;
+
+  /** Launchpad listing ids (see LAUNCHPADS in vaults.ts). */
+  vaultLaunchpads: string[];
+  setVaultLaunchpads: (launchpads: string[]) => void;
+
+  /** Where creator rewards are routed (mine AI tokens, stake, or claim fees). */
+  vaultCreatorRewards: CreatorRewardMode;
+  setVaultCreatorRewards: (mode: CreatorRewardMode) => void;
+
+  /** Creator fee in percentage points (0-8). */
+  vaultFee: number;
+  setVaultFee: (fee: number) => void;
+
+  feeReceiver: string;
+  setFeeReceiver: (receiver: string) => void;
+
+  /** Strategy text or the full Solidity source from the strategy lab. */
   strategy: string;
   setStrategy: (strategy: string) => void;
-}
 
-// 2. ✅ FIXED: Pass null as the starting state, and explicitly type the context
+  /** Metadata produced by the chat agent alongside the contract. */
+  strategySpec: StrategySpec | null;
+  setStrategySpec: (spec: StrategySpec | null) => void;
+};
+
 const RegistryActionModalContext = createContext<RegistryContextType | null>(
   null,
 );
 
-// 3. This is your component wrapper
 export function RegistryActionModalProvider({
   children,
 }: {
   children: ReactNode;
 }) {
-  const [open, setOpen] = useState(false);
-  const [owner, setOwner] = useState<address>();
-  const [deployParams, setDeployParams] = useState<Uint8Array>();
-  const [feeReceiver, setFeeReceiver] = useState(`0xdddd20020`);
-  const [vaultName, setVaultName] = useState(`0xdddd20020`);
-  const [vaultTicker, setVaultTicker] = useState(`0xdddd20020`);
-  const [vaultChains, setVsultChains] = useState([]);
-  const [vaultFee] = useState("");
+  const [open, setOpenState] = useState(false);
+  const [owner, setOwner] = useState<string>();
+  const [vaultName, setVaultName] = useState("");
+  const [vaultTicker, setVaultTicker] = useState("");
+  const [vaultDescription, setVaultDescription] = useState("");
+  const [vaultChains, setVaultChains] = useState<string[]>(["Base"]);
+  const [vaultAddresses, setVaultAddresses] = useState<string[]>([]);
+  const [vaultLaunchpads, setVaultLaunchpads] = useState<string[]>(["pons"]);
+  const [vaultCreatorRewards, setVaultCreatorRewards] =
+    useState<CreatorRewardMode>("fees");
+  const [vaultFee, setVaultFee] = useState(5);
+  const [feeReceiver, setFeeReceiver] = useState("");
   const [strategy, setStrategy] = useState("");
+  const [strategySpec, setStrategySpec] = useState<StrategySpec | null>(null);
 
-  const { wallets }: any = useWallets();
-  const registry = new Registry("0xtoto", "0xtot0", 20, "0xtoto");
-  const agentManager = new OnchainAgentManager();
-
-  useEffect(() => {
-    refreshClientConfig();
-  }, [wallets]);
-  async function createVault(isAgent: boolean) {
-    try {
-      if (Number(vaultFee) > 8) throw new Error("FEE EXCEEDS MAX 8%");
-      if (!registry.protocolFee) throw new Error("no protocol fee");
-      if (!registry.protocolFeeReciever)
-        throw new Error("no protocol reciever ");
-      const result = await registry.deployHubVault(
-        owner,
-        [
-          vaultName,
-          vaultChains,
-          vaultTicker,
-          [registry.protocolFee, parseEther(vaultFee)],
-          [owner, registry.protocolFeeReciever],
-        ],
-        isAgent,
-      );
-      console.log("RESULT: ", result);
-      await fetch("/api/vault/create/native", {
-        method: "POST",
-        body: JSON.stringify({
-          vaultName,
-          vaultTicker,
-          vaultChains,
-          owner,
-          addresses: [owner],
-        }),
-      });
-    } catch (error) {
-      console.error(error);
+  /**
+   * Clear the seed values when the dialog closes so an unattached contract or
+   * a previous draft never leaks into the next "Create Vault" click. The
+   * strategy lab writes fresh values immediately before opening the dialog.
+   */
+  const setOpen = useCallback((next: boolean) => {
+    if (!next) {
+      setOwner(undefined);
+      setVaultName("");
+      setVaultTicker("");
+      setVaultDescription("");
+      setVaultChains(["Base"]);
+      setVaultAddresses([]);
+      setVaultLaunchpads(["pons"]);
+      setVaultCreatorRewards("fees");
+      setVaultFee(5);
+      setFeeReceiver("");
+      setStrategy("");
+      setStrategySpec(null);
     }
-  }
+    setOpenState(next);
+  }, []);
 
-  async function refreshClientConfig() {
-    await registry.createClient(wallets[0]?.address, baseSepolia);
-  }
-  // 4. ✅ FIXED: Make sure you are using RegistryActionModalContext.Provider here
   return (
     <RegistryActionModalContext.Provider
       value={{
@@ -105,19 +113,28 @@ export function RegistryActionModalProvider({
         setOpen,
         owner,
         setOwner,
-        deployParams,
-        setDeployParams,
-        createVault,
-        feeReceiver,
-        setFeeReceiver,
         vaultName,
         setVaultName,
         vaultTicker,
         setVaultTicker,
+        vaultDescription,
+        setVaultDescription,
         vaultChains,
-        setVsultChains,
+        setVaultChains,
+        vaultAddresses,
+        setVaultAddresses,
+        vaultLaunchpads,
+        setVaultLaunchpads,
+        vaultCreatorRewards,
+        setVaultCreatorRewards,
+        vaultFee,
+        setVaultFee,
+        feeReceiver,
+        setFeeReceiver,
         strategy,
         setStrategy,
+        strategySpec,
+        setStrategySpec,
       }}
     >
       {children}
@@ -125,7 +142,6 @@ export function RegistryActionModalProvider({
   );
 }
 
-// 5. This is your usage hook
 export function useRegistryActionModal() {
   const context = useContext(RegistryActionModalContext);
   if (!context) {

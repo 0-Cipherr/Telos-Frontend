@@ -19,6 +19,8 @@ export type TxRequest = {
     token: string;
     apy: number;
     fee: number;
+    /** Chain the strategy actually deploys on. */
+    vaultChain?: string;
   };
   note?: string;
 };

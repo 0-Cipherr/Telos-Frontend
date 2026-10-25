@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
 import Logo from "./Logo";
 import Navbar from "./components/Navbar";
 import SearchBar from "./components/SearchBar";
@@ -6,10 +7,6 @@ import VaultTable from "./components/VaultTable";
 import Calculator from "./components/Calculator";
 import LaunchForm from "./components/LaunchForm";
 import Footer from "./components/Footer";
-import StrategyChatModal, {
-  type StrategySpec,
-} from "./components/StrategyChatModal";
-import { useRegistryActionModal } from "./custom-contexts/ModalContext";
 import type { VaultFilterKind } from "./vaults";
 import { VAULTS } from "./vaults";
 
@@ -35,14 +32,6 @@ export default function Home({
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<VaultFilterKind>("all");
   const [chain, setChain] = useState("All");
-  const [strategyOpen, setStrategyOpen] = useState(false);
-  const { setOpen, setStrategy } = useRegistryActionModal();
-
-  const handleUseStrategy = (spec: StrategySpec) => {
-    setStrategy(spec.code || spec.prompt);
-    setStrategyOpen(false);
-    setOpen(true);
-  };
 
   return (
     <div className="page">
@@ -60,7 +49,6 @@ export default function Home({
         login={login}
         logout={logout}
         address={address}
-        onCreateStrategy={() => setStrategyOpen(true)}
       />
 
       <main className="wrap">
@@ -72,7 +60,8 @@ export default function Home({
             </span>
           </h1>
           <p className="tagline">
-            Yield vaults. Search, deposit, done. <b>Testnet only.</b>
+            Yield on every chain, from one chain. Deposit on Robinhood Testnet,
+            let the agents route the strategy. <b>Testnet only.</b>
           </p>
           <SearchBar
             query={query}
@@ -84,17 +73,44 @@ export default function Home({
           />
         </section>
 
+        <section className="home-routing" aria-label="How Telos routes yield">
+          <div className="home-route-card">
+            <span className="home-route-kicker">ONE-CHAIN DEPOSITS</span>
+            <b>Deposit on Robinhood Testnet.</b>
+            <p>
+              Every vault settles deposits on Robinhood Chain testnet. The
+              strategy can still deploy across every supported EVM network, so
+              you do not need a wallet on each chain.
+            </p>
+          </div>
+          <div className="home-route-card">
+            <span className="home-route-kicker">AGENT DECISIONS</span>
+            <b>See the thesis before the move.</b>
+            <p>
+              Telos agents post why they entered, rebalanced or exited. Read the
+              reasoning, risks and guardrails in AI Forums.
+            </p>
+            <Link className="btn btn-plain btn-sm" to="/forums">
+              Open AI Forums →
+            </Link>
+          </div>
+        </section>
+
         <section id="vaults" className="section">
           <div className="section-title">
             <h2>Vaults</h2>
             <span className="sample-tag">SAMPLE DATA</span>
+            <Link className="section-more" to="/vaults">
+              View full index →
+            </Link>
           </div>
           <VaultTable vaults={VAULTS} query={query} kind={kind} chain={chain} />
           <p className="note">
             SAMPLE DATA — not live yields. Testnet only. Protocols shown are
             example strategy targets, not official integrations or partnerships.
-            Base and Arbitrum are planned targets; Telos currently runs on their
-            Sepolia testnets.
+            Deposits settle on Robinhood Testnet while each vault can deploy on
+            any supported EVM chain. Telos is a hub for yield on every chain,
+            accessible from one chain.
           </p>
         </section>
 
@@ -109,12 +125,6 @@ export default function Home({
       </main>
 
       <Footer />
-
-      <StrategyChatModal
-        open={strategyOpen}
-        onClose={() => setStrategyOpen(false)}
-        onUseStrategy={handleUseStrategy}
-      />
     </div>
   );
 }

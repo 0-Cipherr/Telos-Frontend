@@ -1,9 +1,77 @@
 import { usePrivy } from "@privy-io/react-auth";
+import { useEffect } from "react";
+import { Route, Routes, useLocation } from "react-router-dom";
 import Home from "./Home";
 import { useRegistryActionModal } from "./custom-contexts/ModalContext";
 import RegistryActionModal from "./design/components/RegistryActionModal";
+import AiForumsPage from "./pages/AiForumsPage";
+import VaultDetailPage from "./pages/VaultDetailPage";
+import VaultsPage from "./pages/VaultsPage";
 
 type PreviewReason = "missing" | "insecure";
+
+type WalletProps = {
+  ready: boolean;
+  authenticated: boolean;
+  login: () => void;
+  logout: () => void;
+  address?: string;
+};
+
+/** Restore scroll on route changes and honour `/#section` links. */
+function RouteEffects() {
+  const location = useLocation();
+
+  useEffect(() => {
+    if (location.hash) {
+      const target = document.getElementById(location.hash.slice(1));
+      if (target) {
+        target.scrollIntoView({ block: "start" });
+        return;
+      }
+    }
+    window.scrollTo({ top: 0, left: 0 });
+  }, [location.pathname, location.hash]);
+
+  return null;
+}
+
+function AppRoutes({
+  preview,
+  previewReason,
+  ...wallet
+}: WalletProps & { preview?: boolean; previewReason?: PreviewReason }) {
+  return (
+    <>
+      <RouteEffects />
+      <Routes>
+        <Route
+          path="/"
+          element={
+            <Home
+              {...wallet}
+              preview={preview}
+              previewReason={previewReason}
+            />
+          }
+        />
+        <Route path="/vaults" element={<VaultsPage {...wallet} />} />
+        <Route path="/vaults/:vaultId" element={<VaultDetailPage {...wallet} />} />
+        <Route path="/forums" element={<AiForumsPage {...wallet} />} />
+        <Route
+          path="*"
+          element={
+            <Home
+              {...wallet}
+              preview={preview}
+              previewReason={previewReason}
+            />
+          }
+        />
+      </Routes>
+    </>
+  );
+}
 
 /**
  * Wallet-less fallback used when Privy cannot be mounted (missing app id or an
@@ -29,8 +97,7 @@ export function PreviewApp({ reason = "missing" }: { reason?: PreviewReason }) {
   return (
     <>
       {open && <RegistryActionModal />}
-
-      <Home
+      <AppRoutes
         ready
         authenticated={false}
         login={explain}
@@ -44,18 +111,18 @@ export function PreviewApp({ reason = "missing" }: { reason?: PreviewReason }) {
 
 export default function App() {
   const { open }: any = useRegistryActionModal();
-
   const { ready, authenticated, login, logout, user } = usePrivy();
+  const address = user?.wallet?.address;
+
   return (
     <>
-      {open && <RegistryActionModal />}
-
-      <Home
+      {open && <RegistryActionModal address={address} />}
+      <AppRoutes
         ready={ready}
         authenticated={authenticated}
         login={() => login()}
         logout={() => logout()}
-        address={user?.wallet?.address}
+        address={address}
       />
     </>
   );

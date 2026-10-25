@@ -1,8 +1,11 @@
 import { PrivyProvider } from "@privy-io/react-auth";
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
+import { BrowserRouter } from "react-router-dom";
 import App, { PreviewApp } from "./App";
+import { CreatedVaultsProvider } from "./custom-contexts/CreatedVaultsContext";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
+import { StrategyLauncherProvider } from "./custom-contexts/StrategyLauncherContext";
 import { TxConfirmerProvider } from "./custom-contexts/TxConfirmerContext";
 import "./index.css";
 import "./tailwind.css";
@@ -32,38 +35,45 @@ const previewReason: "missing" | "insecure" | null = missing
     : null;
 
 // Keep the app-level contexts inside PrivyProvider so hooks such as
-// `useWallets` (used by ModalContext) can see the connected wallet.
+// `useWallets` can see the connected wallet. The strategy launcher wraps the
+// router tree so the agent is available on every page.
 function Providers({ children }: { children: ReactNode }) {
   return (
-    <RegistryActionModalProvider>
-      <TxConfirmerProvider>{children}</TxConfirmerProvider>
-    </RegistryActionModalProvider>
+    <CreatedVaultsProvider>
+      <TxConfirmerProvider>
+        <RegistryActionModalProvider>
+          <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
+        </RegistryActionModalProvider>
+      </TxConfirmerProvider>
+    </CreatedVaultsProvider>
   );
 }
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    {previewReason ? (
-      <Providers>
-        <PreviewApp reason={previewReason} />
-      </Providers>
-    ) : (
-      <PrivyProvider
-        appId={appId as string}
-        config={{
-          loginMethods: ["wallet", "sms"],
-          appearance: {
-            theme: "#f1f1ea",
-            accentColor: "#8fd400",
-            showWalletLoginFirst: true,
-            logo: "/icon.svg",
-          },
-        }}
-      >
+    <BrowserRouter>
+      {previewReason ? (
         <Providers>
-          <App />
+          <PreviewApp reason={previewReason} />
         </Providers>
-      </PrivyProvider>
-    )}
+      ) : (
+        <PrivyProvider
+          appId={appId as string}
+          config={{
+            loginMethods: ["wallet", "sms"],
+            appearance: {
+              theme: "#f1f1ea",
+              accentColor: "#8fd400",
+              showWalletLoginFirst: true,
+              logo: "/icon.svg",
+            },
+          }}
+        >
+          <Providers>
+            <App />
+          </Providers>
+        </PrivyProvider>
+      )}
+    </BrowserRouter>
   </StrictMode>,
 );

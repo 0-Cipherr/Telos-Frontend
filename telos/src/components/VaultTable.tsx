@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { Link } from "react-router-dom";
+import { DEPOSIT_CHAIN } from "../chains";
 import type { Vault, VaultFilterKind } from "../vaults";
-import { tvlValue } from "../vaults";
+import { formatUsd, tvlValue, weeklyEarnings } from "../vaults";
 import { useTxConfirmer } from "../custom-contexts/TxConfirmerContext";
 
 type SortKey = "apy" | "tvl" | "fee";
@@ -52,8 +54,9 @@ function TableHead({ sort, onSort }: TableHeadProps) {
       <tr>
         <th scope="col">Type</th>
         <th scope="col">Vault</th>
-        <th scope="col">Chain</th>
+        <th scope="col">Chains</th>
         {renderSortable("apy", "APY")}
+        <th scope="col">Wk / $1k</th>
         {renderSortable("tvl", "TVL")}
         {renderSortable("fee", "Fee")}
         <th scope="col">Creator</th>
@@ -71,23 +74,27 @@ function VaultRow({
   openDisabled?: boolean;
 }) {
   const { confirmTx } = useTxConfirmer();
-  const chainEmoji = vault.chain === "Base" ? "🔵" : "🔷";
   const vaultEmoji = vault.kind === "ready" ? "📦" : "🛠️";
   const token =
-    vault.name.match(/WETH|USDC|USDe|ETH|DAI|WBTC/i)?.[0]?.toUpperCase() ??
+    vault.name.match(/USDC|USDT|WETH|ETH|DAI|WBTC|sUSDe|ARB/i)?.[0]?.toUpperCase() ??
     "USDC";
+  const chains =
+    vault.chains.length > 1
+      ? `${vault.chains[0]} +${vault.chains.length - 1}`
+      : vault.chain;
 
   const handleDeposit = () => {
     void confirmTx({
       kind: "deposit",
-      chains: [vault.chain],
+      chains: [DEPOSIT_CHAIN],
       deposit: {
         vaultName: vault.name,
         token,
         apy: vault.apy,
         fee: vault.fee,
+        vaultChain: vault.chain,
       },
-      note: "Testnet only. Deposit is simulated in this build — no assets are transferred.",
+      note: `Deposits settle on ${DEPOSIT_CHAIN}. Testnet only — no assets are transferred in this build.`,
     });
   };
 
@@ -102,13 +109,16 @@ function VaultRow({
           <b>{vault.name}</b>
         </span>
         <span className="vault-sub">
-          {vault.kind === "ready" ? `via ${vault.proto}` : "Custom strategy"}
+          {vault.kind === "ready" ? `via ${vault.proto}` : vault.strategy}
         </span>
       </td>
-      <td className="nowrap">
-        {chainEmoji} {vault.chain}
+      <td className="nowrap" title={vault.chains.join(" · ")}>
+        🌐 {chains}
       </td>
-      <td className="apy">{vault.apy.toFixed(1)}%</td>
+      <td className="apy">{vault.apy > 0 ? `${vault.apy.toFixed(1)}%` : "—"}</td>
+      <td className="nowrap">
+        {vault.apy > 0 ? formatUsd(weeklyEarnings(vault.apy), 2) : "—"}
+      </td>
       <td className="nowrap">${vault.tvl}</td>
       <td className="nowrap">{vault.fee}%</td>
       <td className="creator">{vault.creator}</td>
@@ -127,18 +137,24 @@ function VaultRow({
           >
             📥 Deposit
           </button>
-          <button
-            type="button"
-            className="btn btn-plain btn-sm"
-            disabled={openDisabled}
-            title={
-              openDisabled
-                ? "Preview only — this vault is not deployed"
-                : "Vault pages are not wired up in this preview"
-            }
-          >
-            🧲 Open
-          </button>
+          {openDisabled ? (
+            <button
+              type="button"
+              className="btn btn-plain btn-sm"
+              disabled
+              title="Preview only"
+            >
+              🧲 Open
+            </button>
+          ) : (
+            <Link
+              className="btn btn-plain btn-sm"
+              to={`/vaults/${vault.id}`}
+              title={`Open ${vault.name}`}
+            >
+              🧲 Open
+            </Link>
+          )}
         </span>
       </td>
     </tr>
@@ -169,12 +185,20 @@ export default function VaultTable({
 
   const shown = vaults.filter((vault) => {
     if (kind !== "all" && vault.kind !== kind) return false;
-    if (chain !== "All" && vault.chain !== chain) return false;
+    if (chain !== "All" && !vault.chains.includes(chain)) return false;
     if (!term) return true;
 
     const source =
-      vault.kind === "ready" ? (vault.proto ?? "") : "custom strategy";
-    return [vault.name, source, vault.chain, vault.creator]
+      vault.kind === "ready" ? (vault.proto ?? "") : vault.strategy;
+    return [
+      vault.id,
+      vault.name,
+      source,
+      vault.chain,
+      vault.chains.join(" "),
+      vault.description,
+      vault.creator,
+    ]
       .join(" ")
       .toLowerCase()
       .includes(term);
@@ -203,7 +227,7 @@ export default function VaultTable({
           <TableHead sort={sort} onSort={toggleSort} />
           <tbody>
             {sorted.map((vault) => (
-              <VaultRow key={vault.name} vault={vault} />
+              <VaultRow key={vault.id} vault={vault} />
             ))}
           </tbody>
         </table>

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { CHAIN_ALIAS_PATTERN, normalizeChain } from "../chains";
 import { lockBodyScroll } from "../utils/scrollLock";
+import { buildLocalContract } from "../strategies/local-contract";
 import {
   auditStatusLabel,
   blockingFindings,
@@ -17,8 +19,10 @@ import {
   strategyFileName,
   validateStrategySource,
   visibleAnswer,
+  wantsCompileRequest,
   type StrategySpec,
 } from "../strategies/strategy-standard";
+import { loadSavedStrategies } from "../strategies/strategy-store";
 
 export type { StrategySpec } from "../strategies/strategy-standard";
 
@@ -49,7 +53,6 @@ type StrategyChatModalProps = {
 
 const KEY_STORAGE = "telos.llm.key";
 const MODEL_STORAGE = "telos.llm.model";
-const SAVED_STORAGE = "telos.strategies";
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 // Dev/preview server proxy (see vite.config.ts). Keeps the API key server-side
 // so the lab is usable without any login/paste-a-key step.
@@ -63,16 +66,16 @@ const HARD_TIMEOUT_MS = 240_000;
 const MAX_REPAIRS = 2;
 // Free models sometimes echo the request instead of compiling. One strict
 // nudge is usually enough to get back on format.
-const NO_CONTRACT_PROMPT = `Your last reply did not contain a Solidity contract. Do not repeat the user's request. If a required fact is genuinely missing, ask exactly ONE short question. Otherwise emit the strategy now: one short sentence, the META: line, then one fenced solidity block containing the COMPLETE file.`;
+const NO_CONTRACT_PROMPT = `The user asked you to compile a strategy, but your last reply did not contain a Solidity contract. Do not repeat the request or apologize. If a required fact is genuinely missing, ask exactly ONE short question. Otherwise emit the strategy now: one short sentence, the META: line, then one fenced solidity block containing the COMPLETE file.`;
 const AUDIT_TIMEOUT_MS = 200_000;
 
 const WELCOME =
-  "yo. i'm strategist.exe — i compile vault strategies into Solidity against the telos IStrategy standard, then run an independent ETHSKILLS audit. only contracts that pass can reach strategy creation. tell me the play, asset, chain and risk.";
+  "hey — i'm strategist, your telos strategy copilot. we can just talk through an idea, compare venues, or compile a real IStrategy contract when you're ready. nothing gets registered until it passes verification in the strategy modal.";
 
 const WELCOME_CHIPS = [
-  "USDC lending, low risk, Base",
-  "Delta-neutral USDC, Arbitrum",
-  "ETH momentum, high risk, Arbitrum",
+  "USDC lending on Base, low risk",
+  "Delta-neutral USDC on Arbitrum",
+  "Explain funding carry vs lending",
   "🎲 surprise me",
 ];
 
@@ -93,27 +96,6 @@ function writeStorage(key: string, value: string) {
   }
 }
 
-function loadSaved(): StrategySpec[] {
-  try {
-    const raw = window.localStorage.getItem(SAVED_STORAGE);
-    if (!raw) return [];
-    const parsed: unknown = JSON.parse(raw);
-    return Array.isArray(parsed) ? (parsed as StrategySpec[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveSpec(spec: StrategySpec) {
-  const saved = loadSaved().filter((item) => item.name !== spec.name);
-  saved.unshift(spec);
-  try {
-    window.localStorage.setItem(SAVED_STORAGE, JSON.stringify(saved.slice(0, 12)));
-  } catch {
-    /* ignore quota / privacy-mode failures */
-  }
-}
-
 function extractDraft(text: string, previous: Draft): Draft {
   const next: Draft = { ...previous };
   const lower = text.toLowerCase();
@@ -124,8 +106,8 @@ function extractDraft(text: string, previous: Draft): Draft {
       asset === "eth" ? "WETH" : asset === "btc" ? "WBTC" : asset.toUpperCase();
   }
 
-  const chain = lower.match(/\b(base|arbitrum)\b/)?.[1];
-  if (chain) next.chain = chain === "base" ? "Base" : "Arbitrum";
+  const chain = lower.match(CHAIN_ALIAS_PATTERN)?.[1];
+  if (chain) next.chain = normalizeChain(chain, "Base");
 
   if (/\b(low|safe|stable|conservative|chill|careful)\b/.test(lower)) {
     next.risk = "LOW";
@@ -163,7 +145,7 @@ function extractDraft(text: string, previous: Draft): Draft {
 function nextQuestion(draft: Draft): { text: string; chips: string[] } | null {
   if (!draft.goal) {
     return {
-      text: "first things first: what's the play?",
+      text: "what's the play? i can also just pick something sensible if you say surprise me.",
       chips: [
         "Stable yield",
         "Delta-neutral",
@@ -175,26 +157,20 @@ function nextQuestion(draft: Draft): { text: string; chips: string[] } | null {
   }
   if (!draft.risk) {
     return {
-      text: "how spicy are we going?",
-      chips: ["Low risk", "Balanced", "Degen"],
+      text: "how spicy are we going? say 'defaults' and i'll use balanced risk.",
+      chips: ["Low risk", "Balanced", "Degen", "Use defaults"],
     };
   }
   if (!draft.chain) {
     return {
-      text: "which chain should this vault live on?",
-      chips: ["Base", "Arbitrum"],
+      text: "which chain should the strategy target? (deposits still settle on Robinhood Testnet)",
+      chips: ["Base", "Arbitrum", "Ethereum", "Robinhood Testnet", "Use defaults"],
     };
   }
   if (!draft.asset) {
     return {
-      text: "what asset does the vault hold?",
-      chips: ["USDC", "WETH", "DAI", "WBTC"],
-    };
-  }
-  if (draft.fee === undefined) {
-    return {
-      text: "last one — what creator fee should the vault charge?",
-      chips: ["0%", "5%", "8%"],
+      text: "what asset should it hold?",
+      chips: ["USDC", "WETH", "DAI", "WBTC", "Use defaults"],
     };
   }
   return null;
@@ -209,13 +185,23 @@ function pick<T>(items: T[], seed: string): T {
 function buildStrategy(input: Draft): StrategySpec {
   const goal = input.goal ?? "Balanced yield";
   const asset = input.asset ?? "USDC";
-  const chain = input.chain ?? "Base";
+  const chain = normalizeChain(input.chain ?? "Base", "Base");
   const risk = input.risk ?? "MED";
   const fee = input.fee ?? 5;
 
-  const lending = chain === "Base" ? "Aave v3" : "Aave v3";
-  const lp = chain === "Base" ? "Aerodrome" : "Uniswap v3";
-  const hedge = chain === "Base" ? "Pendle" : "GMX";
+  const lending = "Aave v3";
+  const lp =
+    chain === "Base"
+      ? "Aerodrome"
+      : chain === "Arbitrum"
+        ? "Camelot"
+        : "Uniswap v3";
+  const hedge =
+    chain === "Base"
+      ? "Pendle"
+      : chain === "Arbitrum"
+        ? "GMX"
+        : "Pendle";
   const protocol = input.protocol;
   const pair =
     asset === "USDC" || asset === "USDT" || asset === "DAI"
@@ -295,7 +281,7 @@ function buildStrategy(input: Draft): StrategySpec {
 
   const prompt = [
     `TELOS STRATEGY SPEC — ${name} (${ticker})`,
-    `Chain: ${chain} (Sepolia testnet)`,
+    `Chain: ${chain} (EVM)`,
     `Asset: ${asset}`,
     `Risk: ${risk}`,
     `Creator fee: ${fee}%`,
@@ -305,6 +291,11 @@ function buildStrategy(input: Draft): StrategySpec {
     ...guardrails.map((item) => `- ${item}`),
     `Thesis: ${thesis}`,
   ].join("\n");
+
+  // The local engine always ships a contract. It is intentionally a simple
+  // idle-asset adapter, clearly marked as unaudited in the UI.
+  const local = buildLocalContract({ name, asset, chain, risk, thesis });
+  const code = local.code;
 
   return {
     name,
@@ -317,15 +308,26 @@ function buildStrategy(input: Draft): StrategySpec {
     allocations,
     guardrails,
     prompt,
-    code: "",
+    code,
+    source: "local",
+    validation: validateStrategySource(code),
+    audit: {
+      status: "unavailable",
+      findings: [],
+      engine: "telos local template",
+      error: "LLM offline — deterministic IStrategy template, not audited",
+      checkedAt: Date.now(),
+    },
   };
 }
 
 const RANDOM_DRAFTS: Draft[] = [
   { goal: "Stable yield", risk: "LOW", chain: "Base", asset: "USDC", fee: 5, protocol: "Morpho" },
   { goal: "Delta-neutral", risk: "MED", chain: "Arbitrum", asset: "USDC", fee: 8, protocol: "Pendle" },
-  { goal: "Momentum", risk: "HIGH", chain: "Arbitrum", asset: "WETH", fee: 8, protocol: "GMX" },
+  { goal: "Momentum", risk: "HIGH", chain: "Ethereum", asset: "WETH", fee: 8, protocol: "Aave" },
   { goal: "LP fees", risk: "MED", chain: "Base", asset: "WETH", fee: 5, protocol: "Aerodrome" },
+  { goal: "LP fees", risk: "MED", chain: "Optimism", asset: "USDC", fee: 6, protocol: "Uniswap" },
+  { goal: "Stable yield", risk: "LOW", chain: "Telos", asset: "USDC", fee: 6, protocol: "Telos" },
 ];
 
 // The model streams prose first, then META, then the Solidity block. Showing
@@ -478,7 +480,7 @@ export default function StrategyChatModal({
       seededRef.current = true;
       pushBot(WELCOME, WELCOME_CHIPS);
     }
-    setSavedCount(loadSaved().length);
+    setSavedCount(loadSavedStrategies().length);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 60);
     return () => {
       window.clearTimeout(focusTimer);
@@ -512,7 +514,7 @@ export default function StrategyChatModal({
   const generateFrom = (draft: Draft) => {
     const spec = buildStrategy(draft);
     pushBot(
-      "local draft ✓ — no model linked, so there's no contract source yet. open model / api key to compile Solidity.",
+      "local compile ✓ — deterministic IStrategy template attached. it is not protocol-specific and not audited, so it will open in the create-strategy modal as an unverified draft. you can still review and register it there.",
       undefined,
       spec,
     );
@@ -529,11 +531,57 @@ export default function StrategyChatModal({
       return;
     }
 
+    if (/^(hi|hey|hello|yo|sup|gm)\b/i.test(text.trim())) {
+      pushBot(
+        "hey. want to talk through a strategy, or should i compile one? try: “compile a low-risk USDC lending strategy on Base”.",
+        ["Compile a USDC lending strategy on Base", "Explain funding carry", "🎲 surprise me"],
+      );
+      return;
+    }
+
+    if (/help|what can you|how does this work|who are you/i.test(text)) {
+      pushBot(
+        "i can chat through ideas, compare venues, and compile a complete IStrategy contract when you ask. contracts go to the create-strategy modal for verification before they can be registered. deposits settle on Robinhood Testnet while strategies can target any supported EVM chain.",
+        ["Compile a delta-neutral USDC strategy", "What chains are supported?", "🎲 surprise me"],
+      );
+      return;
+    }
+
+    if (/use defaults?|defaults?/i.test(text)) {
+      const defaults: Draft = {
+        goal: next.goal ?? "Stable yield",
+        risk: next.risk ?? "MED",
+        chain: next.chain ?? "Base",
+        asset: next.asset ?? "USDC",
+        fee: next.fee ?? 5,
+      };
+      draftRef.current = defaults;
+      generateFrom(defaults);
+      return;
+    }
+
+    if (
+      wantsCompileRequest(text) &&
+      (next.goal || next.risk || next.chain || next.asset)
+    ) {
+      generateFrom(next);
+      return;
+    }
+
     const question = nextQuestion(next);
     if (!question) {
       generateFrom(next);
       return;
     }
+
+    if (!next.goal && !next.risk && !next.chain && !next.asset && text.trim().length < 16) {
+      pushBot(
+        "i'm listening. describe the play and i'll either talk it through or compile it when you say so.",
+        ["Compile a low-risk USDC strategy on Base", "Compare lending vs LP", "🎲 surprise me"],
+      );
+      return;
+    }
+
     pushBot(question.text, question.chips);
   };
 
@@ -673,6 +721,7 @@ export default function StrategyChatModal({
     let reasoningChars = 0;
     let shownThinking = 0;
     let repairPrompt = "";
+    const compileIntent = isRepair || wantsCompileRequest(text);
     const stale = () => requestRef.current !== requestId;
 
     // Without a first-token timeout the modal sits on "COMPUTING…" forever if
@@ -814,7 +863,7 @@ export default function StrategyChatModal({
       historyRef.current.push({ role: "assistant", content: answer.slice(0, 12000) });
 
       if (parsed.spec) {
-        setSavedCount(loadSaved().length);
+        setSavedCount(loadSavedStrategies().length);
         const validation =
           parsed.spec.validation ?? validateStrategySource(parsed.spec.code);
         if (validation.ok) {
@@ -847,16 +896,16 @@ export default function StrategyChatModal({
           role: "sys",
           text: "the contract came back incomplete or unparseable — send \"retry\" to recompile it.",
         });
-      } else if (repairsRef.current < MAX_REPAIRS && !/\?\s*$/.test(parsed.text.trim())) {
-        // Degenerate reply: prose with no code block at all. Nudge once instead
-        // of leaving the user staring at an echo of their own request.
+      } else if (compileIntent && repairsRef.current < MAX_REPAIRS && !/\?\s*$/.test(parsed.text.trim())) {
+        // The user asked for a contract but got prose. Nudge once with a format
+        // reminder instead of leaving them staring at an echo of their request.
         repairsRef.current += 1;
         repairPrompt = NO_CONTRACT_PROMPT;
         pushMessage({
           role: "sys",
           text: "no contract in that reply — recompiling with a stricter format reminder…",
         });
-      } else {
+      } else if (compileIntent) {
         pushMessage({
           role: "sys",
           text: "no contract in that reply — say \"compile it\" for another pass.",
@@ -884,11 +933,15 @@ export default function StrategyChatModal({
           text: isRepair
             ? `LLM OFFLINE — ${detail}. repair skipped; keep this contract out of deploy.`
             : fallback
-              ? `LLM OFFLINE — ${detail}. falling back to the local strategist.`
+              ? compileIntent
+                ? `LLM OFFLINE — ${detail}. falling back to the local strategist.`
+                : `LLM OFFLINE — ${detail}. the local sim can still compile a strategy if you ask for one.`
               : `LLM OFFLINE — ${detail}. that reply got cut short.`,
         });
         // Local answers are instant; run after this block clears the flags.
-        if (fallback && !isRepair) queueMicrotask(() => advanceLocal(text));
+        if (fallback && !isRepair && compileIntent) {
+          queueMicrotask(() => advanceLocal(text));
+        }
       }
     } finally {
       window.clearTimeout(firstTokenTimeout);
@@ -965,18 +1018,26 @@ export default function StrategyChatModal({
       });
       return;
     }
-    if (!isAuditCleared(spec.audit)) {
+    if (spec.validation && !spec.validation.ok) {
       pushMessage({
         role: "sys",
-        text:
-          spec.audit?.status === "running"
-            ? "the ETHSKILLS audit is still running — use unlocks when it passes."
-            : "audit gate closed — this contract has not passed the ETHSKILLS audit, so it cannot be added to strategy creation.",
+        text: `contract failed the structural validator — fix these before attaching it:\n${spec.validation.issues
+          .map((issue) => `· ${issue}`)
+          .join("\n")}`,
       });
       return;
     }
-    saveSpec(spec);
-    setSavedCount(loadSaved().length);
+    if (!isAuditCleared(spec.audit)) {
+      pushMessage({
+        role: "sys",
+        text: "opening the create-strategy modal — this contract has not cleared the ETHSKILLS audit yet, so it will show as an unverified draft.",
+      });
+    } else {
+      pushMessage({
+        role: "sys",
+        text: "opening the create-strategy modal with the verified contract…",
+      });
+    }
     onUseStrategy(spec);
     onClose();
   };
@@ -1053,13 +1114,14 @@ export default function StrategyChatModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="y2k-titlebar">
-          <span className="y2k-spark" aria-hidden="true">
-            ✦
+          <span className="y2k-brandmark" aria-hidden="true">
+            ♪
           </span>
           <span className="y2k-title" id="y2k-title">
-            TELOS_STRATEGY_LAB.EXE
+            TELOS.FM
           </span>
-          <span className="y2k-title-meta">v2.001 / {engineLabel}</span>
+          <span className="y2k-title-sub">STRATEGY STUDIO</span>
+          <span className="y2k-title-meta">2008 EDITION / {engineLabel}</span>
           <div className="y2k-winbtns">
             <span aria-hidden="true">_</span>
             <span aria-hidden="true">□</span>
@@ -1071,16 +1133,45 @@ export default function StrategyChatModal({
 
         <div className="y2k-body">
           <aside className="y2k-rail" aria-label="Strategy lab controls">
+            <div className="y2k-rail-brand">
+              <span className="y2k-rail-logo" aria-hidden="true">
+                T
+              </span>
+              <span>
+                <b>TELOS.FM</b>
+                <span>STRATEGY STUDIO</span>
+              </span>
+            </div>
+
             <div className="y2k-agent">
               <div className="y2k-agent-face" aria-hidden="true">
                 <span>◕</span>
                 <span>◕</span>
               </div>
               <div>
-                <b>STRATEGIST.EXE</b>
+                <b>STRATEGIST</b>
                 <span className="y2k-agent-status">
                   <i className="y2k-led" aria-hidden="true" />
                   {llmReady ? "BYOK LINKED" : server.ready ? "TELOS LINKED" : "LOCAL SIM"}
+                </span>
+              </div>
+            </div>
+
+            <div className="y2k-rail-block">
+              <span className="y2k-label">NOW PLAYING</span>
+              <div className="y2k-nowplaying">
+                <span className="y2k-nowplaying-art" aria-hidden="true">
+                  ✦
+                </span>
+                <div>
+                  <b>Strategy session</b>
+                  <span>{typing || streaming || auditing ? "live compile" : "ready to chat"}</span>
+                </div>
+                <span className="y2k-eq" aria-hidden="true">
+                  <i />
+                  <i />
+                  <i />
+                  <i />
                 </span>
               </div>
             </div>
@@ -1183,15 +1274,24 @@ export default function StrategyChatModal({
 
             <div className="y2k-rail-block y2k-howto">
               <span className="y2k-label">HOW IT WORKS</span>
-              <p>01. describe the play</p>
-              <p>02. pick risk + chain</p>
-              <p>03. compile to Solidity</p>
-              <p>04. ethskills audit gate</p>
-              <p>05. pass → use in vault</p>
+              <p>01. chat or brainstorm</p>
+              <p>02. ask to compile</p>
+              <p>03. verify in strategy modal</p>
+              <p>04. register the strategy</p>
+              <p>05. create a vault if you want</p>
             </div>
           </aside>
 
           <div className="y2k-chat">
+            <div className="y2k-chat-head">
+              <div>
+                <span className="y2k-chat-kicker">STRATEGY RADIO</span>
+                <b>Conversation</b>
+              </div>
+              <span className="y2k-onair">
+                <i aria-hidden="true" /> ON AIR
+              </span>
+            </div>
             <div className="y2k-transcript" aria-live="polite">
               {messages.map((message) => (
                 <div className={`y2k-msg y2k-msg--${message.role}`} key={message.id}>
@@ -1247,31 +1347,36 @@ export default function StrategyChatModal({
             </div>
 
             <form className="y2k-composer" onSubmit={onSubmit}>
-              <div className="y2k-prompt-char" aria-hidden="true">
-                &gt;
-              </div>
+              <span className="y2k-search-icon" aria-hidden="true">
+                ⌕
+              </span>
               <input
                 ref={inputRef}
                 className="y2k-input"
                 type="text"
                 value={input}
-                placeholder="describe the play, asset, chain, risk…"
+                placeholder="search a strategy… or just tell me the play"
                 aria-label="Message the strategy assistant"
                 spellCheck={false}
                 onChange={(event) => setInput(event.target.value)}
               />
               {typing || streaming ? (
                 <button type="button" className="btn y2k-send" onClick={stopLlm}>
-                  STOP ■
+                  ■ STOP
                 </button>
               ) : (
                 <button type="submit" className="btn y2k-send" disabled={!input.trim()}>
-                  SEND ▶
+                  ▶ SEND
                 </button>
               )}
             </form>
 
             <div className="y2k-statusbar">
+              <span className="y2k-player" aria-hidden="true">
+                <span>⏮</span>
+                <span className="y2k-play">▶</span>
+                <span>⏭</span>
+              </span>
               <span
                 className={`y2k-led${typing || streaming || auditing ? " is-busy" : ""}`}
                 aria-hidden="true"
@@ -1292,6 +1397,9 @@ export default function StrategyChatModal({
                             : "LOCAL SIM ONLINE"}
               </span>
               <span className="y2k-statusbar-spacer" />
+              <span className="y2k-statusbar-track" aria-hidden="true">
+                <i style={{ width: typing || streaming || auditing ? "68%" : "100%" }} />
+              </span>
               <span>TESTNET ONLY</span>
               <span className="y2k-blink" aria-hidden="true">
                 ▌
@@ -1328,6 +1436,8 @@ function StrategyCard({
   const cleared = isAuditCleared(audit);
   const blockers = blockingFindings(audit).length;
   const lineCount = spec.code ? spec.code.split("\n").length : 0;
+  const validationOk = !validation || validation.ok;
+  const canUse = Boolean(spec.code) && validationOk;
   return (
     <div className="y2k-card">
       <div className="y2k-card-head">
@@ -1346,6 +1456,12 @@ function StrategyCard({
         <span>{spec.asset}</span>
         <span>·</span>
         <span>{spec.code ? "SOLIDITY · ISTRATEGY" : "SPEC ONLY · NO SOURCE"}</span>
+        {spec.source === "local" ? (
+          <>
+            <span>·</span>
+            <span className="y2k-pending">LOCAL TEMPLATE</span>
+          </>
+        ) : null}
         {validation ? (
           <>
             <span>·</span>
@@ -1490,14 +1606,24 @@ function StrategyCard({
           type="button"
           className="btn btn-sm"
           onClick={() => onUse(spec)}
-          disabled={!cleared}
+          disabled={!canUse}
           title={
-            cleared
-              ? "Add this audited contract to the vault builder"
-              : "Locked until the ETHSKILLS audit passes"
+            !spec.code
+              ? "This draft has no contract source"
+              : !validationOk
+                ? "Fix the validator issues first"
+                : cleared
+                  ? "Open the verified contract in the create-strategy modal"
+                  : "Open the contract in the create-strategy modal as an unverified draft"
           }
         >
-          {cleared ? "USE IN VAULT BUILDER →" : "AUDIT REQUIRED"}
+          {!spec.code
+            ? "NO CONTRACT"
+            : !validationOk
+              ? "FIX VALIDATOR ISSUES"
+              : cleared
+                ? "REVIEW IN STRATEGY MODAL →"
+                : "REVIEW UNVERIFIED →"}
         </button>
         <button type="button" className="btn btn-plain btn-sm" onClick={() => onCopy(spec)}>
           {copied ? "COPIED ✓" : spec.code ? "COPY CONTRACT" : "COPY SPEC"}
@@ -1515,10 +1641,12 @@ function StrategyCard({
       {!cleared ? (
         <p className="y2k-audit-lock">
           {!spec.code
-            ? "use locked — this draft has no contract source."
-            : audit?.status === "running"
-              ? "audit running — use unlocks on a pass."
-              : "use locked — strategy creation requires a passing ETHSKILLS audit."}
+            ? "contract missing — link a model or use the local template, then compile again."
+            : !validationOk
+              ? "validator failed — repair the source before opening the strategy modal."
+              : audit?.status === "running"
+                ? "audit still running — you can review the source now, but it will open as unverified."
+                : "audit not cleared — the strategy modal will mark this as an unverified draft."}
         </p>
       ) : null}
     </div>

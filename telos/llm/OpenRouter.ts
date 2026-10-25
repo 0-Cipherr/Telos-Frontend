@@ -33,15 +33,16 @@ export class OpenRouter {
             "Content-Type": " application/json",
           },
           body: JSON.stringify({
-            name: "API Key for AUser",
+            name: `API Key for ${userName || "AUser"}`,
             limit: 0.000001,
             limit_reset: "monthly",
             expires_at: "2027-12-31T23:59:59Z",
             include_byok_in_limit: true,
           }),
         });
-        await this.uploadAgent();
-        return result.json()?.key;
+        await this.uploadAgent({ name: userName });
+        const json: any = await result.json();
+        return json?.key;
       }
       return {};
     } catch (error) {
@@ -88,9 +89,9 @@ export class OpenRouter {
     }
   }
 
-  async uploadAgent(agentInfo: any, telos: TelosAPI) {
+  async uploadAgent(agentInfo: any) {
     try {
-      await telos.uploadAgent(agentInfo);
+      await (this.telos ?? this.telos).uploadAgent(agentInfo);
       //call our api updload to db
       await fetch("agent/create");
     } catch (error) {

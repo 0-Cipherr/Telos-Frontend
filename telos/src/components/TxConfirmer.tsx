@@ -1,30 +1,22 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { NetworkArbitrumSepolia, NetworkBaseSepolia } from "@web3icons/react";
+import { NetworkBase } from "@web3icons/react";
+import { findChain } from "../chains";
 import type { TxRequest } from "../custom-contexts/TxConfirmerContext";
 import { lockBodyScroll } from "../utils/scrollLock";
 
 type ChainMeta = {
   label: string;
   explorer: string;
-  Icon: typeof NetworkBaseSepolia;
+  Icon: typeof NetworkBase;
 };
 
 function chainMeta(chain: string): ChainMeta {
-  const isBase = chain.toLowerCase().includes("base");
-  const hasSepolia = chain.toLowerCase().includes("sepolia");
-  const baseLabel = hasSepolia ? chain : `${chain} Sepolia`;
-
-  return isBase
-    ? {
-        label: baseLabel,
-        explorer: "https://sepolia.basescan.org/tx/",
-        Icon: NetworkBaseSepolia,
-      }
-    : {
-        label: baseLabel,
-        explorer: "https://sepolia.arbiscan.io/tx/",
-        Icon: NetworkArbitrumSepolia,
-      };
+  const found = findChain(chain);
+  return {
+    label: chain,
+    explorer: found?.explorer ?? "",
+    Icon: found?.Icon ?? NetworkBase,
+  };
 }
 
 function randomHash(): string {
@@ -67,7 +59,7 @@ export default function TxConfirmer({ request, onDone }: Props) {
   const running = useRef(false);
 
   const isDeposit = request.kind === "deposit";
-  const chains = request.chains.length ? request.chains : ["Base Sepolia"];
+  const chains = request.chains.length ? request.chains : ["Base"];
   const numericAmount = Number(amount);
   const amountValid =
     !isDeposit || (Number.isFinite(numericAmount) && numericAmount > 0);
@@ -233,6 +225,16 @@ export default function TxConfirmer({ request, onDone }: Props) {
                     <b>{request.deposit.vaultName}</b>
                   </div>
                   <div className="tx-row">
+                    <span>Deposit chain</span>
+                    <b>{chains[0]}</b>
+                  </div>
+                  {request.deposit.vaultChain ? (
+                    <div className="tx-row">
+                      <span>Strategy chain</span>
+                      <b>{request.deposit.vaultChain}</b>
+                    </div>
+                  ) : null}
+                  <div className="tx-row">
                     <span>Amount</span>
                     <b>
                       {amount
@@ -373,14 +375,18 @@ export default function TxConfirmer({ request, onDone }: Props) {
                   <div className="tx-row" key={item.hash}>
                     <span>{meta.label}</span>
                     <b>
-                      <a
-                        href={`${meta.explorer}${item.hash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        title={item.hash}
-                      >
-                        {shortHash(item.hash)} ↗
-                      </a>
+                      {meta.explorer ? (
+                        <a
+                          href={`${meta.explorer}${item.hash}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          title={item.hash}
+                        >
+                          {shortHash(item.hash)} ↗
+                        </a>
+                      ) : (
+                        <span title={item.hash}>{shortHash(item.hash)}</span>
+                      )}
                     </b>
                   </div>
                 );

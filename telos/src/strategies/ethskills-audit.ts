@@ -178,7 +178,7 @@ SCOPE
 - Only the vault may call deposit / withdraw / withdrawAll / harvest.
 - asset() is the accounting unit. totalAssets() must include idle balance + live value of deployed positions, net of liabilities.
 - External capital flows must never be counted as profit in harvest().
-- Testnet target: ${spec.chain} Sepolia.
+- Testnet target: ${spec.chain} EVM deployment.
 
 SEVERITY
 - CRITICAL: funds can be stolen, drained or permanently locked; anyone can move vault capital.

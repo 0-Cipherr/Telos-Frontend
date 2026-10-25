@@ -1,4 +1,5 @@
 import type { VaultFilterKind } from "../vaults";
+import { CHAINS } from "../vaults";
 
 type SearchBarProps = {
   query: string;
@@ -8,6 +9,8 @@ type SearchBarProps = {
   chain: string;
   onChainChange: (value: string) => void;
 };
+
+const QUICK_CHAINS = ["Ethereum", "Base", "Arbitrum", "Telos"];
 
 export default function SearchBar({
   query,
@@ -73,23 +76,37 @@ export default function SearchBar({
         <span className="sep" aria-hidden="true">
           |
         </span>
-        <button
-          type="button"
-          className={`filter-link${chain === "Base" ? " on" : ""}`}
-          onClick={() => onChainChange(chain === "Base" ? "All" : "Base")}
-        >
-          🔵 Base
-        </button>
-        <span className="sep" aria-hidden="true">
-          |
-        </span>
-        <button
-          type="button"
-          className={`filter-link${chain === "Arbitrum" ? " on" : ""}`}
-          onClick={() => onChainChange(chain === "Arbitrum" ? "All" : "Arbitrum")}
-        >
-          🔷 Arbitrum
-        </button>
+        {QUICK_CHAINS.map((name) => (
+          <span className="quick-chain" key={name}>
+            <button
+              type="button"
+              className={`filter-link${chain === name ? " on" : ""}`}
+              onClick={() => onChainChange(chain === name ? "All" : name)}
+            >
+              {name === "Ethereum" ? "⟠" : name === "Base" ? "🔵" : name === "Arbitrum" ? "🔷" : "◆"}{" "}
+              {name}
+            </button>
+            <span className="sep" aria-hidden="true">
+              |
+            </span>
+          </span>
+        ))}
+        <label className="chain-filter-label">
+          <span className="sr-only">All EVM chains</span>
+          <select
+            className="input chain-filter-select"
+            value={CHAINS.includes(chain) ? chain : "All"}
+            onChange={(event) => onChainChange(event.target.value)}
+            aria-label="Filter by EVM chain"
+          >
+            <option value="All">All EVM chains</option>
+            {CHAINS.map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
     </div>
   );

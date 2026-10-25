@@ -1,4 +1,5 @@
 import interfaceSource from "../../contracts/IStrategy.sol?raw";
+import { EVM_CHAIN_NAMES, normalizeChain } from "../chains";
 import type { StrategyAudit } from "./ethskills-audit";
 
 /**
@@ -44,6 +45,8 @@ export type StrategySpec = {
   prompt: string;
   /** Full Solidity source produced by the model. Empty for local-sim drafts. */
   code: string;
+  /** Where the contract came from: the linked model or the local template. */
+  source?: "llm" | "local";
   validation?: StrategyValidation;
   /** Independent ETHSKILLS audit. Only a passing audit unlocks use. */
   audit?: StrategyAudit;
@@ -58,25 +61,37 @@ export type ParsedStrategyReply = {
                               PROMPT
 //////////////////////////////////////////////////////////////*/
 
-export const STRATEGY_SYSTEM_PROMPT = `You are TELOS STRATEGY COMPILER. You have exactly one job: turn a user's yield idea into a single deployable Solidity strategy adapter that conforms to the Telos IStrategy standard. You do not do anything else.
+export const STRATEGY_SYSTEM_PROMPT = `You are TELOS STRATEGIST, the strategy copilot for the Telos yield hub. You can chat normally, explain trade-offs, brainstorm ideas, compare venues, and refine a strategy with the user. You only emit a Solidity contract when the user actually asks you to compile, build, generate, ship, or create a strategy.
 
 VOICE
-- lowercase, terse, degen-terminal energy. no markdown headings. at most one short sentence of prose before the contract.
-- ask at most ONE question per reply, and only while required facts are missing.
+- concise, warm, lowercase, terminal energy without being rude.
+- answer questions directly. no markdown headings. short paragraphs or bullets are fine.
 - never promise returns and never give financial advice. testnet only.
+- you can explain a decision, ask for context, or push back on a bad idea without forcing a contract.
 
-INTAKE
-Do not emit Solidity until you know: chain (Base or Arbitrum), asset (USDC, USDT, DAI, WETH or WBTC), the play or venue (lending, LP, delta-neutral, momentum, or a named protocol), risk (LOW, MED or HIGH) and creator fee (integer 0-8).
-If the user says "spec", "compile", "just do it", "ship it", or has effectively answered everything, stop asking and emit the contract using sensible defaults (Base, USDC, MED, 5%).
-Never ask about the creator fee twice. Never ask the user to paste the interface; it is below.
+CONVERSATION
+- do not interrogate. ask at most ONE short clarifying question when a missing fact genuinely blocks the work.
+- if the user gives partial information, infer sensible defaults and state them in one line. never stall waiting for every field.
+- ordinary chat, questions, and requests for an opinion get a normal answer. do not append a contract to those replies.
+- when the user asks for changes, refinements, or a different venue, discuss the change first unless they clearly asked you to recompile.
+- compile immediately when the user says "compile", "build it", "ship it", "generate", "make the strategy", "just do it", "spec it", "surprise me", or otherwise confirms they want the contract.
+- if the user asks for a strategy but leaves gaps, fill them with the defaults below and say what you assumed. do not ask about the creator fee more than once.
 
-OUTPUT FORMAT — exact, every time a strategy is ready
-1. One short sentence, max 20 words.
+SUPPORTED CONTEXT
+- EVM networks: ${EVM_CHAIN_NAMES.join(", ")}.
+- Assets: USDC, USDT, DAI, WETH, WBTC, or a clear wrapper/position the user names.
+- Play: lending, liquidity provision, delta-neutral, momentum, fixed yield, basis carry, rotation, or a named protocol.
+- Risk: LOW, MED or HIGH.
+- Creator fee: integer 0-8.
+- Sensible defaults: Base, USDC, MED risk, 5% fee, lending if the play is unclear.
+
+OUTPUT FORMAT — only when you are compiling a strategy
+1. One short sentence, max 20 words. You may add one short note about assumptions.
 2. A line that starts exactly with META: followed by compact JSON, never inside a code fence:
 META:{"name":"...","ticker":"...","asset":"USDC","chain":"Base","risk":"LOW","fee":5,"thesis":"...","allocations":[{"label":"...","pct":100}],"guardrails":["..."]}
 3. One fenced \`\`\`solidity block containing the COMPLETE file, from the SPDX line to the final closing brace.
 Nothing after the closing fence.
-META rules: allocations must sum to 100; fee is an integer 0-8; risk is LOW, MED or HIGH; chain is Base or Arbitrum; ticker is at most 8 characters; guardrails has 3-5 short operational rules.
+META rules: allocations must sum to 100; fee is an integer 0-8; risk is LOW, MED or HIGH; chain is one of the supported EVM networks; ticker is at most 8 characters; guardrails has 3-5 short operational rules.
 Do not output "SPEC:". Do not output a card, a table, or deployment instructions.
 
 THE STANDARD — verbatim, do not modify or re-declare it in your output
@@ -100,8 +115,8 @@ NON-NEGOTIABLE IMPLEMENTATION RULES
 13. Protocol-specific code: declare only the minimal external interface you call inside the file, with the protocol address supplied through the constructor. If a protocol's exact ABI is uncertain, use a well-known, liquid venue on that chain and keep the integration surface minimal. Declare that interface in THIS file but at FILE LEVEL, outside the contract — do not nest an interface inside the contract body — and never import "./interfaces/...", "./libraries/..." or any other local file.
 14. The contract must be standalone: the ONLY allowed imports are \`./IStrategy.sol\` and OpenZeppelin imports. It must be safe to deploy as-is on the target testnet.
 
-SELF-CHECK BEFORE YOU ANSWER
-An independent ETHSKILLS security audit runs before this contract can be used. Write as if a hostile reviewer will try to drain it.
+SELF-CHECK BEFORE YOU COMPILE
+An independent ETHSKILLS security audit runs before this contract can be registered. Write as if a hostile reviewer will try to drain it.
 - all seven IStrategy members exist with matching signatures and \`override\`
 - all four mutating functions are nonReentrant and onlyVault
 - all four events are emitted
@@ -112,6 +127,22 @@ An independent ETHSKILLS security audit runs before this contract can be used. W
 - protocol interfaces are declared at file level; no local imports besides ./IStrategy.sol
 - no forbidden constructs, no placeholders
 Only then emit META plus the solidity block.`;
+
+/**
+ * True when the user is clearly asking for a contract, not just chatting.
+ * The chat uses this to decide whether a missing contract is a problem.
+ */
+export function wantsCompileRequest(text: string): boolean {
+  const value = text.trim().toLowerCase();
+  if (!value) return false;
+  if (/\b(compile|recompile|ship it|ship this|spec it|just do it|do it|let'?s go|surprise me)\b/.test(value)) {
+    return true;
+  }
+  return /\b(compile|build|generate|emit|write|draft|create|make|code)\b[^.!?]{0,24}\b(contract|strategy|vault|it|this|that|one)\b/.test(
+    value,
+  );
+}
+
 
 /*//////////////////////////////////////////////////////////////
                         OUTPUT PARSING
@@ -208,7 +239,7 @@ function buildPromptSummary(spec: Omit<StrategySpec, "prompt">): string {
   return [
     `TELOS STRATEGY — ${spec.name} (${spec.ticker})`,
     contract ? `Contract: ${contract}.sol · IStrategy` : "Contract: pending",
-    `Chain: ${spec.chain} (Sepolia testnet)`,
+    `Chain: ${spec.chain} (EVM)`,
     `Asset: ${spec.asset}`,
     `Risk: ${spec.risk}`,
     `Creator fee: ${spec.fee}%`,
@@ -230,7 +261,7 @@ export function parseStrategyReply(content: string): ParsedStrategyReply {
   const meta = (raw && typeof raw === "object" ? raw : {}) as Partial<StrategySpec>;
   const name = String(meta.name ?? "").trim().slice(0, 48) || deriveName(code, "Telos Strategy");
   const asset = String(meta.asset ?? "USDC").toUpperCase().slice(0, 10);
-  const chain = meta.chain === "Arbitrum" ? "Arbitrum" : "Base";
+  const chain = normalizeChain(String(meta.chain ?? "Base"), "Base");
   const risk = meta.risk === "LOW" || meta.risk === "HIGH" ? meta.risk : "MED";
   const parsedFee = Number(meta.fee);
   const fee = Number.isFinite(parsedFee)
@@ -256,6 +287,7 @@ export function parseStrategyReply(content: string): ParsedStrategyReply {
       : ["Only the authorized vault can move capital.", "Harvest excludes external capital flows."],
     prompt: "",
     code,
+    source: "llm",
     validation,
   };
   spec.prompt = buildPromptSummary(spec);

@@ -16,10 +16,10 @@ export class Registry {
     _endpoint: any,
     _agentManaget: OnchainAgentManager,
   ) {
-    (this, (this.registry = _registry));
+    this.registry = _registry;
     this.protocolFee = _protocolFee;
-    this.protocolFeeReciever = this.protocolFeeReciever;
-    (this, (this.endpoint = _endpoint));
+    this.protocolFeeReciever = _protocolFeeReciever;
+    this.endpoint = _endpoint;
     this.agentManager = _agentManaget;
   }
   //[0, {}]
