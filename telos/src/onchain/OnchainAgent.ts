@@ -7,6 +7,7 @@ interface AgentInfo {
   id: number;
   agent: Agent;
 }
+// this is a singleton single shard instance across all places
 export class OnchainAgentManager {
   protected llm: LLM;
   protected agents: Array<AgentInfo> | undefined;

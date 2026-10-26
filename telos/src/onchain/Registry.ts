@@ -1,7 +1,7 @@
 import { createWalletClient, http } from "viem";
 import type { address } from "../types/solidity-types";
 import type { OnchainAgentManager } from "./OnchainAgent";
-
+//one hsared instance
 export class Registry {
   client: any;
   registry: any = "0x";
