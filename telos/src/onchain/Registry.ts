@@ -1,3 +1,5 @@
+import type { Agent } from "http";
+import type TelosAPI from "../api-handler/Telos/telos-api-methods";
 import type { address } from "../types/solidity-types";
 import type { OnchainAgentManager } from "./OnchainAgent";
 import type { OnchainExecutor } from "./OnchainExecutor";
@@ -10,6 +12,7 @@ export class Registry {
   protected endpoint: any;
   protected agentManager: OnchainAgentManager;
   protected onchainExecutor: OnchainExecutor;
+  protected telosAPI: TelosAPI;
   constructor(
     _registry: address,
     _protocolFeeReciever: any,
@@ -17,6 +20,7 @@ export class Registry {
     _endpoint: any,
     _agentManager: OnchainAgentManager,
     _onchainExecutor: OnchainExecutor,
+    _telosAPI: TelosAPI,
   ) {
     this.registry = _registry;
     this.protocolFee = _protocolFee;
@@ -24,8 +28,13 @@ export class Registry {
     this.endpoint = _endpoint;
     this.agentManager = _agentManager;
     this.onchainExecutor = _onchainExecutor;
+    this.telosAPI = _telosAPI;
   }
+
+  async getRegistryDeployment() {}
   //[0, {}]
+
+  //if agent make agent assing then call api to post agent
   async deployHubVault(
     userName: string,
     owner: address,
@@ -35,13 +44,33 @@ export class Registry {
   ) {
     try {
       if (isAgent) {
-        const agentKey = await this.createLLMAgent(userName, owner, model);
+        const createdAgent: Agent = await this.createLLMAgent(
+          userName,
+          owner,
+          model,
+        );
+        await this.telosAPI.uploadAgent(createdAgent);
         // await concurrency to handle multple scheduled tscthis.createAgent(deployParams[2], deployParams[3]);
       }
       deployParams.fees.protocolFee = this.protocolFee;
       deployParams.fees.protocolFeeReciever = this.protocolFeeReciever;
-
-      deployParams[1] = this.encodeDeployParams(deployParams[1]);
+      /**
+       *
+       * needs         (IERC20 vaultAsset, VaultHelper.VaultDeployParams memory deployParams)
+        structure     
+        struct VaultDeployParams {
+              address deployer;
+              address[] authorizedVip;
+              string vaultName;
+              string vaultTicker;
+              IERC20 vaultAsset;
+              address creator;
+              address vaultEndpoint;
+              VaultAssets.FeesInfo fees;
+              VaultAssets.feeReceiversInfo feeReceivers;
+          }
+          */
+      deployParams[1] = this.encodeDeployParams(deployParams[1]); //index one is ther dpeloymernt params
       await this.onchainExecutor.writeContract({
         address: this.registry,
         functionName: "deployHubVault",
@@ -50,7 +79,14 @@ export class Registry {
       return true;
     } catch (error) {
       console.log(error);
-      return false;
+      throw new Error("Transaction was not processed please try again!");
+    }
+  }
+
+  async deployVaultCrossChain() {
+    try {
+    } catch (error) {
+      console.log(error);
     }
   }
 

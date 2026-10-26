@@ -1,8 +1,13 @@
-import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import {
+  generatePrivateKey,
+  privateKeyToAccount,
+  type PrivateKeyAccount,
+} from "viem/accounts";
 import { OpenRouter } from "../../llm/OpenRouter";
 import type LLM from "../interfaces/LLM";
 import type { address } from "../types/solidity-types";
 import { Agent } from "./Agent";
+
 interface AgentInfo {
   id: number;
   agent: Agent;
@@ -10,7 +15,7 @@ interface AgentInfo {
 // this is a singleton single shard instance across all places
 export class OnchainAgentManager {
   protected llm: LLM;
-  protected agents: Array<AgentInfo> | undefined;
+  protected agents: Array<AgentInfo> | null;
   protected currentAgentID: number;
   constructor(_llm: LLM) {
     this.llm = _llm;
@@ -27,53 +32,89 @@ export class OnchainAgentManager {
   setLLM(_llm: OpenRouter) {
     this.llm = _llm;
   }
-
-  async createAgent(username: any, creator: address, model: string) {
+  //for encryptoing the strength of the key is very important
+  //use this Asymmetric Encryption:  uses pubkey
+  async createAgent(
+    username: any,
+    creator: address,
+    model: string,
+  ): Promise<any[]> {
     try {
       const result = await this.llm.createAgent(username);
+      const agentWallet: PrivateKeyAccount | null = await this.createWallet();
       const agent = new Agent(
         this.currentAgentID,
         this.llm,
         creator,
         model,
         result,
+        agentWallet,
       );
-      agent;
-    } catch (error) {}
+      this.addAgent(agent);
+      return [
+        this.currentAgentID,
+        this.llm,
+        creator,
+        model,
+        result,
+        agentWallet,
+      ];
+    } catch (error) {
+      console.log(error);
+      throw new Error("Could not create agent!");
+    }
   }
 
-  addAgent(id: number, agent: Agent) {
-    this.agents?.push({ id, agent });
+  getAgentPV(agentId: number) {
+    return this.agents?.at(agentId)?.agent.getPV();
+  }
+
+  addAgent(agent: Agent) {
+    this.agents?.push({ id: this.currentAgentID, agent });
+    this.increaseCurrentAgentId();
   }
 
   getAgent(id: number) {
     try {
-      return {};
+      return this.agents?.at(id);
     } catch (error) {
       console.log(error);
+
+      return null;
     }
   }
-  increaseCurrentAgentId() {}
+  increaseCurrentAgentId() {
+    this.currentAgentID++;
+  }
   async getCurrentAgentID(): Promise<number> {
     return 0; //get this from db update based on total agents
   }
   async createWallet() {
     try {
       const key = await generatePrivateKey();
-      const account = await this.instantiateWallet(key);
+      const account: PrivateKeyAccount | null =
+        await this.instantiateWallet(key);
       console.log("ACC");
       console.log(account);
 
+      return account;
+
       // Create a local account from the private key
-    } catch (error) {}
+    } catch (error) {
+      console.log(error);
+      throw new Error("Could not create a wallet please try again !");
+    }
   }
 
   async checkForSchedueledEvents() {}
   async instantiateWallet(key: any) {
     try {
-      const account = privateKeyToAccount(key);
+      const account: PrivateKeyAccount | null = privateKeyToAccount(key);
       return account;
-    } catch (error) {}
+    } catch (error) {
+      console.log(error);
+      return null;
+    }
   }
 
   async genPrivateKey() {

@@ -5,7 +5,7 @@ import type { address } from "../types/solidity-types";
 export class Agent {
   llm: LLM;
   key: string;
-  walletAcc: PrivateKeyAccount | undefined;
+  walletAcc: PrivateKeyAccount | null;
   creator: address;
   id: number;
   model: string;
@@ -15,10 +15,11 @@ export class Agent {
     _creator: address,
     _model: string,
     _key: string,
+    _agentWalletKey: PrivateKeyAccount | null,
   ) {
     this.id = _id;
     this.llm = _llm;
-    this.walletAcc = undefined;
+    this.walletAcc = _agentWalletKey;
     this.creator = _creator;
     this.model = _model;
     this.key = _key;
@@ -42,13 +43,24 @@ export class Agent {
     return this.creator;
   }
 
-  assignModel() {}
+  updateModel(_model: string) {
+    this.model = _model;
+  }
   getId(): number {
     return this.id;
   }
 
+  async getPV() {
+    try {
+      return this.walletAcc;
+    } catch (error) {
+      console.log(error);
+    }
+  }
   getModel() {
     return this.model;
   }
 }
 //store tasks in db get on scheduele
+
+///idea schedueler pullas all agents all fields must match agent contrucxtor instantiate make decision boom
