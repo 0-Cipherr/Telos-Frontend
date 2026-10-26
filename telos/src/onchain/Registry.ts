@@ -1,4 +1,3 @@
-import type { Agent } from "http";
 import type TelosAPI from "../api-handler/Telos/telos-api-methods";
 import type { address } from "../types/solidity-types";
 import type { OnchainAgentManager } from "./OnchainAgent";
@@ -34,20 +33,26 @@ export class Registry {
   async getRegistryDeployment() {}
   //[0, {}]
 
+  async assignModel() {
+    return "";
+  }
+
   //if agent make agent assing then call api to post agent
   async deployHubVault(
-    userName: string,
+    userName: string | null,
     owner: address,
-    model: string,
+    model: string | null,
     deployParams: any,
     isAgent: boolean,
   ) {
     try {
       if (isAgent) {
-        const createdAgent: Agent = await this.createLLMAgent(
+        const _model: string = model == null ? await this.assignModel() : model;
+
+        const createdAgent: any[] = await this.createLLMAgent(
           userName,
           owner,
-          model,
+          _model,
         );
         await this.telosAPI.uploadAgent(createdAgent);
         // await concurrency to handle multple scheduled tscthis.createAgent(deployParams[2], deployParams[3]);

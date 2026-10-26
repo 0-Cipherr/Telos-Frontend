@@ -38,7 +38,7 @@ export class OnchainAgentManager {
     username: any,
     creator: address,
     model: string,
-  ): Promise<any[]> {
+  ): Promise<any> {
     try {
       const result = await this.llm.createAgent(username);
       const agentWallet: PrivateKeyAccount | null = await this.createWallet();
@@ -51,14 +51,14 @@ export class OnchainAgentManager {
         agentWallet,
       );
       this.addAgent(agent);
-      return [
-        this.currentAgentID,
-        this.llm,
+      return {
+        currentAgentID: this.currentAgentID,
+        llm: this.llm,
         creator,
         model,
         result,
         agentWallet,
-      ];
+      };
     } catch (error) {
       console.log(error);
       throw new Error("Could not create agent!");

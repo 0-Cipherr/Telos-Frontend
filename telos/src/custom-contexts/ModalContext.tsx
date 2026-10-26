@@ -1,3 +1,4 @@
+import { useWallets } from "@privy-io/react-auth";
 import {
   createContext,
   useCallback,
@@ -5,6 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { Registry } from "../onchain/Registry";
 import type { StrategySpec } from "../strategies/strategy-standard";
 import type { CreatorRewardMode } from "../vaults";
 
@@ -65,9 +67,12 @@ const RegistryActionModalContext = createContext<RegistryContextType | null>(
 
 export function RegistryActionModalProvider({
   children,
+  registry,
 }: {
   children: ReactNode;
+  registry: Registry;
 }) {
+  const { wallets }: any = useWallets();
   const [open, setOpenState] = useState(false);
   const [owner, setOwner] = useState<string>();
   const [vaultName, setVaultName] = useState("");
@@ -82,7 +87,30 @@ export function RegistryActionModalProvider({
   const [feeReceiver, setFeeReceiver] = useState("");
   const [strategy, setStrategy] = useState("");
   const [strategySpec, setStrategySpec] = useState<StrategySpec | null>(null);
+  const [enableAgent, setEnableAgent] = useState(false);
 
+  async function deployVault() {
+    if (enableAgent) {
+      deployVaultNativeWithAgent();
+    } else {
+      deployVaultNative;
+    }
+  }
+
+  async function deployVaultNative() {
+    try {
+      await registry.deployHubVault(null, wallets[0]?.address);
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async function deployVaultNativeWithAgent() {
+    try {
+    } catch (error) {
+      console.log(error);
+    }
+  }
   /**
    * Clear the seed values when the dialog closes so an unattached contract or
    * a previous draft never leaks into the next "Create Vault" click. The
@@ -135,6 +163,8 @@ export function RegistryActionModalProvider({
         setStrategy,
         strategySpec,
         setStrategySpec,
+        enableAgent,
+        setEnableAgent,
       }}
     >
       {children}

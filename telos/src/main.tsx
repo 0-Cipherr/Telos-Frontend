@@ -41,7 +41,7 @@ function Providers({ children }: { children: ReactNode }) {
   return (
     <CreatedVaultsProvider>
       <TxConfirmerProvider>
-        <RegistryActionModalProvider>
+        <RegistryActionModalProvider registry={""}>
           <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
         </RegistryActionModalProvider>
       </TxConfirmerProvider>

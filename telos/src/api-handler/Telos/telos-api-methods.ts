@@ -1,8 +1,8 @@
 class TelosAPI {
   baseURL: string = "";
   endpoints: any;
-  key: string;
-  constructor(baseurl: string, _endpoints: any, _key: string) {
+  key: string | null;
+  constructor(baseurl: string, _endpoints: any, _key: string | null) {
     this.baseURL = baseurl;
     this.endpoints = _endpoints;
     this.key = _key;
@@ -13,7 +13,12 @@ class TelosAPI {
       Authorization: `Bearer ${this.key}`,
     };
   }
-  async uploadAgent(_agentInfo: any) {}
+
+  async uploadAgent(_agentInfo: any) {
+    try {
+      const stringifiedAgent = JSON.stringify(_agentInfo);
+    } catch (error) {}
+  }
   async allVaults() {
     try {
       const authParam = this.getAuthParam();
