@@ -318,7 +318,7 @@ export function parseAuditReply(reply: string, pack: AuditPack): StrategyAudit {
 
 export function buildAuditRepairPrompt(audit: StrategyAudit): string {
   const findings = sortFindings(audit.findings);
-  return `The ETHSKILLS security audit FAILED your previous contract. Fix the findings below without changing the IStrategy interface, then return the COMPLETE corrected file in the same format: one short sentence, the META line, then one fenced solidity block.
+  return `The ETHSKILLS security audit FAILED your previous contract. Fix the findings below without changing the IStrategy interface, then return the COMPLETE corrected strategy in the same JSON format: one short sentence, then one fenced json block with every strategy field and the full contract string.
 
 ${findings
   .map(

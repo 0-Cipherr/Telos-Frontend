@@ -4,8 +4,11 @@ import {
   useCallback,
   useContext,
   useState,
+  type Dispatch,
   type ReactNode,
+  type SetStateAction,
 } from "react";
+import type { LaunchPad } from "../interfaces/LaunchPad";
 import type { Registry } from "../onchain/Registry";
 import type { StrategySpec } from "../strategies/strategy-standard";
 import type { CreatorRewardMode } from "../vaults";
@@ -35,7 +38,7 @@ export type RegistryContextType = {
    * The first entry is normally the connected wallet.
    */
   vaultAddresses: string[];
-  setVaultAddresses: (addresses: string[]) => void;
+  setVaultAddresses: Dispatch<SetStateAction<string[]>>;
 
   /** Launchpad listing ids (see LAUNCHPADS in vaults.ts). */
   vaultLaunchpads: string[];
@@ -59,7 +62,20 @@ export type RegistryContextType = {
   /** Metadata produced by the chat agent alongside the contract. */
   strategySpec: StrategySpec | null;
   setStrategySpec: (spec: StrategySpec | null) => void;
+
+  /** Whether the vault should run an onchain strategy agent. */
+  enableAgent: boolean;
+  setEnableAgent: (enabled: boolean) => void;
+
+  /**
+   * Model selected for the vault's onchain strategy agent. The OpenRouter key
+   * is minted by the backend, so the UI only carries the model id.
+   */
+  agentModel: string;
+  setAgentModel: (model: string) => void;
 };
+
+export const DEFAULT_AGENT_MODEL = "openai/gpt-4o-mini";
 
 const RegistryActionModalContext = createContext<RegistryContextType | null>(
   null,
@@ -71,6 +87,7 @@ export function RegistryActionModalProvider({
 }: {
   children: ReactNode;
   registry: Registry;
+  launchPads: Array<LaunchPad>;
 }) {
   const { wallets }: any = useWallets();
   const [open, setOpenState] = useState(false);
@@ -88,29 +105,49 @@ export function RegistryActionModalProvider({
   const [strategy, setStrategy] = useState("");
   const [strategySpec, setStrategySpec] = useState<StrategySpec | null>(null);
   const [enableAgent, setEnableAgent] = useState(false);
+  const [agentModel, setAgentModel] = useState(DEFAULT_AGENT_MODEL);
 
   async function deployVault() {
     if (enableAgent) {
-      deployVaultNativeWithAgent();
     } else {
       deployVaultNative;
     }
   }
-
-  async function deployVaultNative() {
-    try {
-      await registry.deployHubVault(null, wallets[0]?.address);
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
+  async function encodeParams(params: any) {}
   async function deployVaultNativeWithAgent() {
     try {
     } catch (error) {
       console.log(error);
     }
   }
+
+  async function deployVaultNative() {
+    try {
+      /**
+       *  struct VaultDeployParams {
+              address deployer;
+              address[] authorizedVip;
+              string vaultName;
+              string vaultTicker;
+              address creator;
+              address vaultEndpoint;
+              VaultAssets.FeesInfo fees;
+              VaultAssets.feeReceiversInfo feeReceivers;
+          }
+          */
+      const encodedParams = await encodeParams([wallets[0]?.address, vaultAddresses,vaultName, vaultTicker,wallets[0]?.address,,]  ]);
+      await registry.deployHubVault(
+        null,
+        wallets[0]?.address,
+        agentModel,
+        [], //should be encoded depoy params
+        enableAgent,
+      );
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
   /**
    * Clear the seed values when the dialog closes so an unattached contract or
    * a previous draft never leaks into the next "Create Vault" click. The
@@ -130,6 +167,8 @@ export function RegistryActionModalProvider({
       setFeeReceiver("");
       setStrategy("");
       setStrategySpec(null);
+      setEnableAgent(false);
+      setAgentModel(DEFAULT_AGENT_MODEL);
     }
     setOpenState(next);
   }, []);
@@ -165,6 +204,8 @@ export function RegistryActionModalProvider({
         setStrategySpec,
         enableAgent,
         setEnableAgent,
+        agentModel,
+        setAgentModel,
       }}
     >
       {children}

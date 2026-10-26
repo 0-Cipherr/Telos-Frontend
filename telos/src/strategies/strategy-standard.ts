@@ -89,12 +89,22 @@ SUPPORTED CONTEXT
 
 OUTPUT FORMAT — only when you are compiling a strategy
 1. One short sentence, max 20 words. You may add one short note about assumptions.
-2. A line that starts exactly with META: followed by compact JSON, never inside a code fence:
-META:{"name":"...","ticker":"...","asset":"USDC","chain":"Base","risk":"LOW","fee":5,"thesis":"...","allocations":[{"label":"...","pct":100}],"guardrails":["..."]}
-3. One fenced \`\`\`solidity block containing the COMPLETE file, from the SPDX line to the final closing brace.
-Nothing after the closing fence.
-META rules: allocations must sum to 100; fee is an integer 0-8; risk is LOW, MED or HIGH; chain is one of the supported EVM networks; ticker is at most 8 characters; guardrails has 3-5 short operational rules.
-Do not output "SPEC:". Do not output a card, a table, or deployment instructions.
+2. One fenced \`\`\`json block containing exactly this object, and nothing after the closing fence:
+\`\`\`json
+{
+  "name": "USDC Lending Strategy",
+  "ticker": "USDCL",
+  "asset": "USDC",
+  "chain": "Base",
+  "risk": "LOW",
+  "fee": 5,
+  "thesis": "One or two sentences explaining the strategy.",
+  "allocations": [{ "label": "Aave v3 USDC lending on Base", "pct": 100 }],
+  "guardrails": ["Only the vault can move capital.", "Pause deposits on stale oracles."],
+  "contract": "// SPDX-License-Identifier: UNLICENSED\\npragma solidity ^0.8.24;\\n\\n// ...COMPLETE Solidity file...\\n}"
+}
+\`\`\`
+JSON rules: every field is required; allocations must sum to 100; fee is an integer 0-8; risk is LOW, MED or HIGH; chain is one of the supported EVM networks; ticker is at most 8 characters; guardrails has 3-5 short operational rules; contract is the COMPLETE Solidity file as one JSON string with newlines written as \\n and double quotes escaped as \\". Do not wrap the contract in a second code fence. Do not output "META:". Do not output anything after the json block.
 
 THE STANDARD — verbatim, do not modify or re-declare it in your output
 \`\`\`solidity
@@ -128,7 +138,7 @@ An independent ETHSKILLS security audit runs before this contract can be registe
 - deposit does \`_lastTotalAssets += assets\`; withdraw measures the vault balance delta and subtracts it; withdrawAll zeroes it
 - protocol interfaces are declared at file level; no local imports besides ./IStrategy.sol
 - no forbidden constructs, no placeholders
-Only then emit META plus the solidity block.`;
+Only then emit the short sentence plus the fenced json object.`;
 
 /**
  * True when the user is clearly asking for a contract, not just chatting.
@@ -150,12 +160,7 @@ export function wantsCompileRequest(text: string): boolean {
                         OUTPUT PARSING
 //////////////////////////////////////////////////////////////*/
 
-export function extractMarkedJson(source: string, marker: string): unknown {
-  const match = new RegExp(`${marker}\\s*:`, "i").exec(source);
-  if (!match) return null;
-  const start = source.indexOf("{", match.index + match[0].length);
-  if (start < 0) return null;
-
+function jsonObjectAt(source: string, start: number): unknown {
   let depth = 0;
   let inString = false;
   let escaped = false;
@@ -181,6 +186,89 @@ export function extractMarkedJson(source: string, marker: string): unknown {
     }
   }
   return null;
+}
+
+export function extractMarkedJson(source: string, marker: string): unknown {
+  const match = new RegExp(`${marker}\\s*:`, "i").exec(source);
+  if (!match) return null;
+  const start = source.indexOf("{", match.index + match[0].length);
+  if (start < 0) return null;
+  return jsonObjectAt(source, start);
+}
+
+function isStrategyJson(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.contract === "string" || typeof record.code === "string";
+}
+
+/**
+ * Pull the JSON strategy object out of a model reply.
+ *
+ * The preferred shape is a ```json fence. Models occasionally ignore the fence
+ * or wrap it differently, so this also scans raw objects and keeps the first
+ * one that actually carries a contract.
+ */
+export function extractStrategyJson(content: string): Record<string, unknown> | null {
+  const fence = /```[ \t]*[a-zA-Z]*[ \t]*\r?\n([\s\S]*?)```/g;
+  for (const match of content.matchAll(fence)) {
+    const body = match[1].trim();
+    try {
+      const parsed: unknown = JSON.parse(body);
+      if (isStrategyJson(parsed)) return parsed;
+    } catch {
+      /* try the next fence / raw object */
+    }
+  }
+
+  let index = 0;
+  while (index < content.length) {
+    index = content.indexOf("{", index);
+    if (index < 0) break;
+    const parsed = jsonObjectAt(content, index);
+    if (isStrategyJson(parsed)) return parsed;
+    index += 1;
+  }
+  return null;
+}
+
+function contractFromJson(record: Record<string, unknown>): string {
+  const raw = record.contract ?? record.code;
+  if (typeof raw !== "string") return "";
+  const trimmed = raw.trim();
+  if (!trimmed) return "";
+  // Some models still nest a fenced block inside the JSON string.
+  return extractStrategyCode(trimmed) || trimmed;
+}
+
+/**
+ * Recover the contract when the model emitted almost-JSON (for example with
+ * literal newlines inside the string). This keeps older/lazier models usable
+ * instead of dropping a perfectly good contract on a parse error.
+ */
+function looseContractFromJson(content: string): string {
+  const match = /"contract"\s*:\s*"/.exec(content);
+  if (!match) return "";
+  let value = "";
+  let escaped = false;
+  for (let index = match.index + match[0].length; index < content.length; index += 1) {
+    const char = content[index];
+    if (escaped) {
+      if (char === "n") value += "\n";
+      else if (char === "r") value += "\r";
+      else if (char === "t") value += "\t";
+      else value += char;
+      escaped = false;
+      continue;
+    }
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (char === '"') break;
+    value += char;
+  }
+  return value.trim();
 }
 
 function looksLikeStrategy(body: string): boolean {
@@ -222,17 +310,17 @@ function deriveTicker(name: string): string {
 function normalizeAllocations(raw: unknown): Allocation[] {
   if (!Array.isArray(raw)) return [];
   return raw
-    .filter(
-      (item): item is { label: string; pct: number } =>
-        Boolean(item) &&
-        typeof item === "object" &&
-        typeof (item as { label?: unknown }).label === "string" &&
-        Number.isFinite((item as { pct?: unknown }).pct),
-    )
-    .map((item) => ({
-      label: item.label.trim() || "Strategy sleeve",
-      pct: Math.max(0, Math.min(100, Math.round(item.pct))),
-    }))
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const label = (item as { label?: unknown }).label;
+      const pct = Number((item as { pct?: unknown }).pct);
+      if (typeof label !== "string" || !Number.isFinite(pct)) return null;
+      return {
+        label: label.trim() || "Strategy sleeve",
+        pct: Math.max(0, Math.min(100, Math.round(pct))),
+      };
+    })
+    .filter((item): item is Allocation => Boolean(item))
     .slice(0, 8);
 }
 
@@ -253,21 +341,16 @@ function buildPromptSummary(spec: Omit<StrategySpec, "prompt">): string {
   ].join("\n");
 }
 
-export function parseStrategyReply(
-  content: string,
+function specFromFields(
+  code: string,
+  meta: Record<string, unknown>,
   model?: string,
-): ParsedStrategyReply {
-  const text = visibleAnswer(content);
-  const code = extractStrategyCode(content);
-  const raw = extractMarkedJson(content, "META");
-
-  if (!code) return { text };
-
-  const meta = (raw && typeof raw === "object" ? raw : {}) as Partial<StrategySpec>;
+): StrategySpec {
   const name = String(meta.name ?? "").trim().slice(0, 48) || deriveName(code, "Telos Strategy");
   const asset = String(meta.asset ?? "USDC").toUpperCase().slice(0, 10);
   const chain = normalizeChain(String(meta.chain ?? "Base"), "Base");
-  const risk = meta.risk === "LOW" || meta.risk === "HIGH" ? meta.risk : "MED";
+  const riskValue = String(meta.risk ?? "MED").toUpperCase();
+  const risk = riskValue === "LOW" || riskValue === "HIGH" ? riskValue : "MED";
   const parsedFee = Number(meta.fee);
   const fee = Number.isFinite(parsedFee)
     ? Math.max(0, Math.min(8, Math.round(parsedFee)))
@@ -276,6 +359,9 @@ export function parseStrategyReply(
   const guardrails = Array.isArray(meta.guardrails)
     ? meta.guardrails.filter((item): item is string => typeof item === "string").slice(0, 6)
     : [];
+  const thesis =
+    String(meta.thesis ?? meta.description ?? meta.summary ?? "").trim() ||
+    "LLM-compiled IStrategy adapter.";
   const validation = validateStrategySource(code);
 
   const spec: StrategySpec = {
@@ -285,7 +371,7 @@ export function parseStrategyReply(
     chain,
     risk,
     fee,
-    thesis: String(meta.thesis ?? "LLM-compiled IStrategy adapter.").slice(0, 280),
+    thesis: thesis.slice(0, 400),
     allocations: allocations.length ? allocations : [{ label: "Single strategy sleeve", pct: 100 }],
     guardrails: guardrails.length
       ? guardrails
@@ -297,14 +383,47 @@ export function parseStrategyReply(
     validation,
   };
   spec.prompt = buildPromptSummary(spec);
-  return { text, spec };
+  return spec;
 }
 
-/** Prose only: hide META and the contract while the stream is still arriving. */
+export function parseStrategyReply(
+  content: string,
+  model?: string,
+): ParsedStrategyReply {
+  const text = visibleAnswer(content);
+
+  // Preferred path: the model returned the whole strategy as JSON.
+  const json = extractStrategyJson(content);
+  if (json) {
+    const code = contractFromJson(json);
+    if (!code) return { text };
+    return { text, spec: specFromFields(code, json, model) };
+  }
+
+  // Near-JSON: recover the contract string, then use any legacy META metadata.
+  const loose = looseContractFromJson(content);
+  if (loose && looksLikeStrategy(loose)) {
+    const raw = extractMarkedJson(content, "META");
+    const meta = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+    return { text, spec: specFromFields(loose, meta, model) };
+  }
+
+  // Backward-compatible path for older META + solidity replies.
+  const code = extractStrategyCode(content);
+  if (!code) return { text };
+  const raw = extractMarkedJson(content, "META");
+  const meta = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  return { text, spec: specFromFields(code, meta, model) };
+}
+
+/** Prose only: hide the JSON / META / contract while the stream is arriving. */
 export function visibleAnswer(content: string): string {
   const meta = content.search(/\bMETA\s*:/i);
-  const fence = content.search(/```[ \t]*(?:solidity|sol)?[ \t]*\r?\n/i);
-  const cuts = [meta, fence].filter((index) => index >= 0);
+  // Any fenced payload (json preferred, legacy solidity still supported).
+  const fence = content.search(/```[ \t]*(?:json|solidity|sol)?[ \t]*\r?\n/i);
+  // Models occasionally skip the fence and stream the raw strategy object.
+  const rawJson = content.search(/(?:^|\n)[ \t]*\{[ \t]*\r?\n?[ \t]*"name"[ \t]*:/i);
+  const cuts = [meta, fence, rawJson].filter((index) => index >= 0);
   const cut = cuts.length ? Math.min(...cuts) : -1;
   let visible = cut >= 0 ? content.slice(0, cut) : content;
 
@@ -506,7 +625,7 @@ export function validateStrategySource(source: string): StrategyValidation {
 }
 
 export function buildRepairPrompt(issues: string[]): string {
-  return `The contract you just returned failed the Telos strategy validator. Fix every issue below and return the COMPLETE corrected file again in the same format: one short sentence, the META line, then one fenced solidity block.
+  return `The contract you just returned failed the Telos strategy validator. Fix every issue below and return the COMPLETE corrected strategy again in the same JSON format: one short sentence, then one fenced json block with every field (name, ticker, asset, chain, risk, fee, thesis, allocations, guardrails, contract). The contract field must contain the complete Solidity file as one JSON string with newlines escaped as \\n and quotes escaped as \\".
 
 ISSUES
 ${issues.map((issue, index) => `${index + 1}. ${issue}`).join("\n")}

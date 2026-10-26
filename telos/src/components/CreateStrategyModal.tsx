@@ -1,33 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  auditStatusLabel,
-  blockingFindings,
-  isAuditCleared,
-} from "../strategies/ethskills-audit";
+import { auditStatusLabel, isAuditCleared } from "../strategies/ethskills-audit";
 import {
   strategyFileName,
   validateStrategySource,
   type StrategySpec,
 } from "../strategies/strategy-standard";
 import { saveStrategy } from "../strategies/strategy-store";
+import { llmLabel } from "../llm-models";
 import { lockBodyScroll } from "../utils/scrollLock";
-
-type Check = {
-  id: string;
-  label: string;
-  ok: boolean;
-  detail: string;
-};
-
-type VerificationStatus = "idle" | "running" | "verified" | "unverified" | "failed";
-
-type Verification = {
-  status: VerificationStatus;
-  checks: Check[];
-  fingerprint?: string;
-  checkedAt?: number;
-};
 
 type Props = {
   open: boolean;
@@ -37,63 +17,13 @@ type Props = {
   onOpenChat: () => void;
 };
 
-function fallbackFingerprint(source: string): string {
-  // FNV-1a fallback so the fingerprint still renders on insecure origins where
-  // `crypto.subtle` is unavailable.
-  let hash = 0x811c9dc5;
-  for (let index = 0; index < source.length; index += 1) {
-    hash ^= source.charCodeAt(index);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
-}
-
-function fingerprintSource(source: string): Promise<string | undefined> {
-  if (!source) return Promise.resolve(undefined);
-  if (!globalThis.crypto?.subtle) {
-    return Promise.resolve(fallbackFingerprint(source));
-  }
-  return globalThis.crypto.subtle
-    .digest("SHA-256", new TextEncoder().encode(source))
-    .then((digest) =>
-      Array.from(new Uint8Array(digest))
-        .slice(0, 8)
-        .map((byte) => byte.toString(16).padStart(2, "0"))
-        .join(""),
-    )
-    .catch(() => fallbackFingerprint(source));
-}
-
-function statusCopy(status: VerificationStatus): { label: string; detail: string } {
-  switch (status) {
-    case "running":
-      return {
-        label: "VERIFYING…",
-        detail: "Checking the contract structure, interface and latest audit.",
-      };
-    case "verified":
-      return {
-        label: "✓ CONTRACT VERIFIED",
-        detail: "Structure and audit checks passed. This strategy is cleared to register.",
-      };
-    case "failed":
-      return {
-        label: "✗ NOT VERIFIED",
-        detail: "Fix the failed checks before this contract can be registered.",
-      };
-    case "unverified":
-      return {
-        label: "⚠ UNVERIFIED DRAFT",
-        detail: "The source is structurally valid, but the audit has not cleared yet.",
-      };
-    default:
-      return {
-        label: "NOT CHECKED",
-        detail: "Run verification to inspect this contract.",
-      };
-  }
-}
-
+/**
+ * Compact strategy review dialog.
+ *
+ * The chat returns a JSON strategy object (metadata + full contract). This
+ * modal renders that object with just enough context to save it or carry it
+ * into the create-vault form — no separate verification workflow.
+ */
 export default function CreateStrategyModal({
   open,
   spec,
@@ -101,12 +31,7 @@ export default function CreateStrategyModal({
   onCreateVault,
   onOpenChat,
 }: Props) {
-  const navigate = useNavigate();
   const [current, setCurrent] = useState<StrategySpec | null>(spec);
-  const [verification, setVerification] = useState<Verification>({
-    status: "idle",
-    checks: [],
-  });
   const [registered, setRegistered] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
@@ -117,7 +42,6 @@ export default function CreateStrategyModal({
     setRegistered(false);
     setError("");
     setCopied(false);
-    setVerification({ status: "idle", checks: [] });
   }, [open, spec]);
 
   useEffect(() => {
@@ -133,96 +57,20 @@ export default function CreateStrategyModal({
     };
   }, [open, onClose]);
 
-  const verify = async (target: StrategySpec | null = current) => {
-    if (!target) return;
-    setVerification((previous) => ({ ...previous, status: "running" }));
-    setError("");
-
-    const code = target.code?.trim() ?? "";
-    const validation = target.validation ?? validateStrategySource(code);
-    const audit = target.audit;
-    const cleared = isAuditCleared(audit);
-    const blockers = blockingFindings(audit).length;
-    const hasInterface =
-      /contract\s+[A-Za-z_]\w*\s+is\s+IStrategy/.test(code) &&
-      /import\s*\{[^}]*IStrategy[^}]*\}\s*from\s*["'][^"']*IStrategy\.sol["']/.test(code);
-
-    const checks: Check[] = [
-      {
-        id: "source",
-        label: "Contract source",
-        ok: Boolean(code),
-        detail: code ? `${code.split("\n").length} lines attached` : "No Solidity source",
-      },
-      {
-        id: "interface",
-        label: "Telos IStrategy interface",
-        ok: hasInterface,
-        detail: hasInterface
-          ? "Implements the canonical IStrategy interface"
-          : "Missing the IStrategy import or implementation",
-      },
-      {
-        id: "validator",
-        label: "Structural validator",
-        ok: validation.ok,
-        detail: validation.ok
-          ? "Auth, accounting, events and forbidden constructs passed"
-          : validation.issues.slice(0, 2).join(" · "),
-      },
-      {
-        id: "audit",
-        label: "ETHSKILLS audit",
-        ok: cleared,
-        detail: audit ? auditStatusLabel(audit) : "No audit on this draft",
-      },
-      {
-        id: "blockers",
-        label: "Blocking findings",
-        ok: blockers === 0,
-        detail:
-          blockers === 0
-            ? "No critical/high findings"
-            : `${blockers} critical/high finding${blockers === 1 ? "" : "s"}`,
-      },
-    ];
-
-    const fingerprint = await fingerprintSource(code);
-    const failed = !code || !validation.ok || audit?.status === "failed";
-    const status: VerificationStatus = cleared
-      ? "verified"
-      : failed
-        ? "failed"
-        : "unverified";
-
-    setVerification({
-      status,
-      checks,
-      fingerprint,
-      checkedAt: Date.now(),
-    });
-    setCurrent({ ...target, validation });
-  };
-
-  // Verify automatically when the modal opens with a new contract.
-  useEffect(() => {
-    if (open && spec) void verify(spec);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, spec]);
-
   const validation = useMemo(
-    () => current?.validation ?? (current ? validateStrategySource(current.code) : null),
+    () =>
+      current?.validation ??
+      (current ? validateStrategySource(current.code) : { ok: false, issues: [] }),
     [current],
   );
-  const copy = statusCopy(verification.status);
   const auditCleared = isAuditCleared(current?.audit);
-  const canRegister = Boolean(current?.code) && Boolean(validation?.ok);
-  const canCreateVault = Boolean(current?.code) && Boolean(validation?.ok);
+  const canUse = Boolean(current?.code) && validation.ok;
+  const lineCount = current?.code ? current.code.split("\n").length : 0;
 
-  const handleRegister = () => {
+  const handleSave = () => {
     if (!current) return;
-    if (!validation?.ok) {
-      setError("Fix the validator issues before registering this strategy.");
+    if (!validation.ok) {
+      setError("Fix the validator issues before saving this strategy.");
       return;
     }
     saveStrategy({ ...current, validation });
@@ -232,8 +80,8 @@ export default function CreateStrategyModal({
 
   const handleCreateVault = () => {
     if (!current) return;
-    if (!validation?.ok) {
-      setError("Fix the validator issues before creating a vault with this strategy.");
+    if (!validation.ok) {
+      setError("Fix the validator issues before creating a vault.");
       return;
     }
     saveStrategy({ ...current, validation });
@@ -267,7 +115,7 @@ export default function CreateStrategyModal({
   return (
     <div className="modal-overlay strategy-modal-overlay" onClick={onClose}>
       <div
-        className="panel modal strategy-modal"
+        className="panel modal strategy-modal strategy-modal--simple"
         role="dialog"
         aria-modal="true"
         aria-labelledby="strategy-modal-title"
@@ -275,7 +123,7 @@ export default function CreateStrategyModal({
       >
         <div className="modal-head strategy-modal-head">
           <div>
-            <span className="registry-kicker">CREATE STRATEGY / VERIFICATION</span>
+            <span className="registry-kicker">STRATEGY / JSON REVIEW</span>
             <h2 id="strategy-modal-title">🧬 {current.name}</h2>
             <p className="strategy-modal-sub">
               ${current.ticker} · {current.chain} · {current.asset} ·{" "}
@@ -286,59 +134,41 @@ export default function CreateStrategyModal({
             type="button"
             className="btn btn-plain btn-sm"
             onClick={onClose}
-            aria-label="Close create strategy dialog"
+            aria-label="Close strategy dialog"
           >
             ✕
           </button>
         </div>
 
         <div className="strategy-modal-scroll">
-          <section className={`strategy-verify strategy-verify--${verification.status}`}>
-            <div className="strategy-verify-head">
-              <div>
-                <span className="strategy-verify-badge">{copy.label}</span>
-                <p className="strategy-verify-copy">{copy.detail}</p>
-              </div>
-              <button
-                type="button"
-                className="btn btn-plain btn-sm"
-                onClick={() => void verify(current)}
-                disabled={verification.status === "running"}
-              >
-                ↻ RE-VERIFY
-              </button>
-            </div>
+          <div className="strategy-pill-row">
+            <span
+              className={`strategy-pill${
+                validation.ok ? " is-pass" : " is-fail"
+              }`}
+            >
+              {validation.ok
+                ? "VALIDATOR ✓"
+                : `VALIDATOR ✗ ${validation.issues.length}`}
+            </span>
+            <span className="strategy-pill">
+              MODEL {current.model ? llmLabel(current.model) : "NOT RECORDED"}
+            </span>
+            <span
+              className={`strategy-pill${
+                auditCleared ? " is-pass" : " is-pending"
+              }`}
+            >
+              AUDIT {auditStatusLabel(current.audit)}
+            </span>
+            {current.source === "llm" ? (
+              <span className="strategy-pill is-pass">JSON ✓</span>
+            ) : (
+              <span className="strategy-pill">LOCAL TEMPLATE</span>
+            )}
+          </div>
 
-            <ul className="strategy-checks">
-              {verification.checks.map((check) => (
-                <li key={check.id} className={check.ok ? "is-pass" : "is-fail"}>
-                  <span aria-hidden="true">{check.ok ? "✓" : "✗"}</span>
-                  <div>
-                    <b>{check.label}</b>
-                    <span>{check.detail}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-
-            <div className="strategy-verify-foot">
-              <span>
-                FINGERPRINT{" "}
-                <code>{verification.fingerprint ?? "computing…"}</code>
-              </span>
-              <span>
-                {verification.checkedAt
-                  ? new Date(verification.checkedAt).toLocaleTimeString()
-                  : "not checked"}
-              </span>
-            </div>
-            <p className="field-hint">
-              Front-end verification checks structure and the latest ETHSKILLS
-              audit. The backend remains authoritative before deployment.
-            </p>
-          </section>
-
-          <div className="strategy-grid">
+          <div className="strategy-simple-grid">
             <section className="strategy-panel">
               <span className="strategy-panel-label">THESIS</span>
               <p>{current.thesis}</p>
@@ -375,7 +205,7 @@ export default function CreateStrategyModal({
               <span>CONTRACT SOURCE</span>
               <span>
                 {current.code
-                  ? `${current.code.split("\n").length} LINES · ${strategyFileName(current)}`
+                  ? `${lineCount} LINES · ${strategyFileName(current)}`
                   : "NO SOURCE"}
               </span>
             </summary>
@@ -384,10 +214,17 @@ export default function CreateStrategyModal({
             </pre>
           </details>
 
+          {validation.issues.length ? (
+            <ul className="strategy-simple-issues">
+              {validation.issues.map((issue) => (
+                <li key={issue}>{issue}</li>
+              ))}
+            </ul>
+          ) : null}
+
           {registered ? (
             <p className="strategy-success" role="status">
-              ✓ Strategy registered in your local strategy library. It now
-              appears in AI Forums with its thesis and verification state.
+              ✓ Strategy saved to your local strategy library.
             </p>
           ) : null}
 
@@ -402,43 +239,24 @@ export default function CreateStrategyModal({
           <button
             type="button"
             className="btn"
-            onClick={handleRegister}
-            disabled={!canRegister || registered}
+            onClick={handleCreateVault}
+            disabled={!canUse}
             title={
-              canRegister
-                ? auditCleared
-                  ? "Register this verified strategy"
-                  : "Register as an unverified draft"
-                : "Fix the failed verification checks first"
+              canUse
+                ? "Open the create-vault form with this strategy attached"
+                : "Fix the failed validator checks first"
             }
           >
-            {registered
-              ? "REGISTERED ✓"
-              : auditCleared
-                ? "REGISTER VERIFIED STRATEGY"
-                : "REGISTER AS DRAFT"}
+            CREATE VAULT WITH STRATEGY →
           </button>
           <button
             type="button"
             className="btn btn-plain"
-            onClick={handleCreateVault}
-            disabled={!canCreateVault}
-            title="Open the create-vault flow with this strategy attached"
+            onClick={handleSave}
+            disabled={!canUse || registered}
           >
-            CREATE VAULT WITH STRATEGY →
+            {registered ? "SAVED ✓" : "SAVE STRATEGY"}
           </button>
-          {registered ? (
-            <button
-              type="button"
-              className="btn btn-plain"
-              onClick={() => {
-                onClose();
-                navigate("/forums");
-              }}
-            >
-              VIEW THESIS IN AI FORUMS →
-            </button>
-          ) : null}
           <button type="button" className="btn btn-plain" onClick={onOpenChat}>
             BACK TO CHAT
           </button>
@@ -448,7 +266,11 @@ export default function CreateStrategyModal({
         </div>
 
         <div className="strategy-modal-tools">
-          <button type="button" className="linklike" onClick={() => void handleCopy()}>
+          <button
+            type="button"
+            className="linklike"
+            onClick={() => void handleCopy()}
+          >
             {copied ? "COPIED ✓" : "COPY CONTRACT"}
           </button>
           <span aria-hidden="true">·</span>
@@ -462,7 +284,7 @@ export default function CreateStrategyModal({
           </button>
           <span aria-hidden="true">·</span>
           <span>
-            AUDIT {auditStatusLabel(current.audit)} · TESTNET ONLY
+            {lineCount} LINES · TESTNET ONLY
           </span>
         </div>
       </div>

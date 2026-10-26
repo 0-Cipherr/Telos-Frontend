@@ -144,3 +144,32 @@ export function llmLabel(model?: string): string {
   const info = describeLLM(model);
   return info ? `${info.provider} ${info.name}` : "—";
 }
+
+/**
+ * Models a creator can pick for a vault's onchain strategy agent.
+ *
+ * The OpenRouter key itself is provisioned by the Telos backend, so the UI only
+ * ever sends a model id. Keep this list in sync with the backend allow-list.
+ */
+export const MODEL_OPTIONS: LLMInfo[] = [
+  "openai/gpt-4o-mini",
+  "openai/gpt-4.1-mini",
+  "anthropic/claude-3.5-haiku",
+  "google/gemini-2.5-flash",
+  "meta-llama/llama-3.3-70b-instruct",
+  "deepseek/deepseek-chat-v3",
+  "qwen/qwen-2.5-coder-32b-instruct",
+  "mistralai/mistral-large",
+  "cohere/north-mini-code:free",
+  "nvidia/nemotron-3.5-lightning:free",
+  "nvidia/nemotron-3-ultra-550b-a55b:free",
+  "telos/strategist-7b",
+]
+  .map((id) => describeLLM(id))
+  .filter((info): info is LLMInfo => Boolean(info));
+
+/** Ready-to-render label for the model picker, e.g. "OpenAI · GPT-4o mini". */
+export function modelOptionLabel(info: LLMInfo): string {
+  return `${info.provider} · ${info.name}${info.free ? " · free" : ""}`;
+}
+

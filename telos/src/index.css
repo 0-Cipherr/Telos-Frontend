@@ -2983,7 +2983,7 @@ input[type="range"] {
 
   .registry-agent-config {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 8px;
     border-top: 1px dashed var(--border);
     padding-top: 7px;
@@ -3002,6 +3002,60 @@ input[type="range"] {
     color: var(--lime);
     font: 700 8px/1.5 "Courier New", monospace;
     letter-spacing: 0.04em;
+  }
+
+  .registry-strategy-summary {
+    margin-top: 9px;
+  }
+
+  .registry-strategy-card {
+    display: grid;
+    gap: 5px;
+  }
+
+  .registry-strategy-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+  }
+
+  .registry-strategy-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+
+  .registry-strategy-tags span {
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--panel);
+    padding: 1px 5px;
+    color: var(--muted);
+    font: 700 8.5px/1.5 "Courier New", monospace;
+    letter-spacing: 0.04em;
+  }
+
+  .registry-pill {
+    flex: none;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    background: var(--panel);
+    padding: 1px 5px;
+    color: var(--muted);
+    font: 700 8px/1.5 "Courier New", monospace;
+    letter-spacing: 0.05em;
+  }
+
+  .registry-pill.is-pass {
+    border-color: var(--btn-border);
+    color: var(--lime);
+  }
+
+  .registry-pill.is-pending {
+    border-color: #b26a00;
+    color: #b26a00;
   }
 
   .registry-strategy {
@@ -3451,6 +3505,71 @@ input[type="range"] {
   color: var(--muted);
   font: 700 8px/1.3 "Courier New", monospace;
   letter-spacing: 0.05em;
+}
+
+/* Compact JSON review modal: readable summary, no verification dashboard. */
+.strategy-modal--simple {
+  width: min(720px, 100%);
+  max-width: 720px;
+}
+
+.strategy-pill-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+
+.strategy-pill {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--row-alt);
+  padding: 2px 6px;
+  color: var(--muted);
+  font: 700 8.5px/1.4 "Courier New", ui-monospace, monospace;
+  letter-spacing: 0.05em;
+}
+
+.strategy-pill.is-pass {
+  border-color: var(--btn-border);
+  color: var(--lime);
+}
+
+.strategy-pill.is-fail {
+  border-color: #c0392b;
+  color: #c0392b;
+}
+
+.strategy-pill.is-pending {
+  border-color: #b26a00;
+  color: #b26a00;
+}
+
+.strategy-simple-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 8px;
+}
+
+.strategy-simple-grid .strategy-panel {
+  margin-top: 0;
+}
+
+.strategy-simple-issues {
+  margin: 8px 0 0;
+  border: 1px solid var(--border);
+  border-left: 3px solid #c0392b;
+  background: var(--row-alt);
+  padding: 6px 8px 6px 22px;
+  color: #c0392b;
+  font-size: 9.5px;
+  line-height: 1.45;
+}
+
+@media (max-width: 720px) {
+  .strategy-simple-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 /* ---- Launchpads + creator rewards --------------------------------------- */

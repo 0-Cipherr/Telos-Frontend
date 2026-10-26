@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { isAddress } from "viem";
 import { EVM_CHAINS } from "../../chains";
 import { useCreatedVaults } from "../../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../../custom-contexts/TxConfirmerContext";
-import { validateStrategySource } from "../../strategies/strategy-standard";
-import { llmLabel } from "../../llm-models";
+import { extractContractName } from "../../strategies/strategy-standard";
+import {
+  MODEL_OPTIONS,
+  llmLabel,
+  modelOptionLabel,
+} from "../../llm-models";
 import { lockBodyScroll } from "../../utils/scrollLock";
 import {
   CREATOR_REWARDS,
@@ -59,8 +63,11 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultCreatorRewards,
     setVaultFee,
     setFeeReceiver,
-    setStrategy,
     setStrategySpec,
+    enableAgent,
+    setEnableAgent,
+    agentModel,
+    setAgentModel,
   } = useRegistryActionModal();
 
   const [name, setName] = useState("");
@@ -68,17 +75,12 @@ export default function RegistryActionModal({ address }: Props) {
   const [description, setDescription] = useState("");
   const [fee, setFee] = useState(5);
   const [feeReceiverValue, setFeeReceiverValue] = useState("");
-  const [strategyValue, setStrategyValue] = useState("");
   const [chains, setChains] = useState<string[]>(["Base"]);
   const [launchpads, setLaunchpads] = useState<string[]>(["pons"]);
   const [creatorRewards, setCreatorRewards] =
     useState<CreatorRewardMode>("fees");
   const [stakeEnabled, setStakeEnabled] = useState(true);
   const [showCreatorRewards, setShowCreatorRewards] = useState(true);
-  const [addresses, setAddresses] = useState<string[]>([""]);
-  const [enableAgent, setEnableAgent] = useState(false);
-  const [agentKey, setAgentKey] = useState("");
-  const [agentModel, setAgentModel] = useState("openai/gpt-4o-mini");
   const [error, setError] = useState("");
 
   // Keep the form in sync with the calling flow (strategy lab, launch panel,
@@ -90,7 +92,6 @@ export default function RegistryActionModal({ address }: Props) {
     setDescription(vaultDescription || strategySpec?.thesis || "");
     setFee(Number.isFinite(vaultFee) ? vaultFee : 5);
     setFeeReceiverValue(feeReceiver || address || "");
-    setStrategyValue(strategy || "");
     setChains(vaultChains.length ? vaultChains : ["Base"]);
     setLaunchpads(vaultLaunchpads.length ? vaultLaunchpads : ["pons"]);
     setCreatorRewards(vaultCreatorRewards);
@@ -102,7 +103,7 @@ export default function RegistryActionModal({ address }: Props) {
         : address
           ? [address]
           : [""];
-    setAddresses(seededAddresses.length ? seededAddresses : [""]);
+    setVaultAddresses(seededAddresses.length ? seededAddresses : [""]);
     setError("");
     // The context setters are stable state functions; opening the dialog is the
     // only moment we want to overwrite the local draft.
@@ -122,17 +123,18 @@ export default function RegistryActionModal({ address }: Props) {
     };
   }, [open, setOpen]);
 
-  const hasSolidity = /pragma\s+solidity/i.test(strategyValue);
-  const strategyValidation = useMemo(
-    () => (hasSolidity ? validateStrategySource(strategyValue) : null),
-    [hasSolidity, strategyValue],
-  );
-  const contractName =
-    strategyValue.match(/contract\s+([A-Za-z_]\w*)\s+is\s+IStrategy/)?.[1] ??
-    "";
-  const lineCount = strategyValue ? strategyValue.split("\n").length : 0;
+  // The contract itself lives in the strategy modal. This form only reads the
+  // attached strategy metadata, so nothing here needs to parse or edit Solidity.
+  const attachedCode = strategySpec?.code?.trim() ?? "";
+  const attachedContractName = attachedCode
+    ? extractContractName(attachedCode)
+    : "";
+  const attachedLineCount = attachedCode ? attachedCode.split("\n").length : 0;
+  const strategyLabel = strategySpec?.name || strategy || "Custom strategy";
 
-  const cleanAddresses = addresses.map((item) => item.trim()).filter(Boolean);
+  const cleanAddresses = vaultAddresses
+    .map((item) => item.trim())
+    .filter(Boolean);
   const badAddress = cleanAddresses.find((item) => !isAddress(item));
 
   const toggleChain = (chain: string) => {
@@ -152,15 +154,16 @@ export default function RegistryActionModal({ address }: Props) {
   };
 
   const updateAddress = (index: number, value: string) => {
-    setAddresses((current) =>
+    setVaultAddresses((current) =>
       current.map((item, itemIndex) => (itemIndex === index ? value : item)),
     );
   };
 
-  const addAddress = () => setAddresses((current) => [...current, ""]);
+  const addAddress = () =>
+    setVaultAddresses((current) => [...current, ""]);
 
   const removeAddress = (index: number) => {
-    setAddresses((current) =>
+    setVaultAddresses((current) =>
       current.length === 1
         ? [""]
         : current.filter((_, itemIndex) => itemIndex !== index),
@@ -173,7 +176,6 @@ export default function RegistryActionModal({ address }: Props) {
     const trimmedName = name.trim();
     const trimmedTicker = ticker.trim().toUpperCase();
     const trimmedReceiver = feeReceiverValue.trim();
-    const trimmedStrategy = strategyValue.trim();
 
     if (!trimmedName) return setError("A vault name is required.");
     if (!trimmedTicker) return setError("A ticker is required.");
@@ -190,18 +192,6 @@ export default function RegistryActionModal({ address }: Props) {
     }
     if (badAddress) {
       return setError(`Invalid address in the array: ${badAddress}`);
-    }
-    if (!trimmedStrategy) {
-      return setError(
-        "Attach a strategy contract. Use ✦ Create Strategy to generate one.",
-      );
-    }
-    if (strategyValidation && !strategyValidation.ok) {
-      return setError(
-        `Contract validator failed: ${strategyValidation.issues
-          .slice(0, 3)
-          .join(" · ")}`,
-      );
     }
 
     const launchpadNames = launchpads
@@ -221,9 +211,11 @@ export default function RegistryActionModal({ address }: Props) {
         { label: "Creator fee", value: `${fee}%` },
         {
           label: "Strategy",
-          value: hasSolidity
-            ? `${contractName || "Contract"} · ${lineCount} lines · IStrategy`
-            : "Text strategy (no Solidity attached)",
+          value: strategySpec
+            ? attachedCode
+              ? `${attachedContractName || strategySpec.name} · ${attachedLineCount} lines · IStrategy`
+              : `${strategySpec.name} · no contract source`
+            : `${strategyLabel} · no contract source`,
         },
         {
           label: "Strategy model",
@@ -253,7 +245,7 @@ export default function RegistryActionModal({ address }: Props) {
         {
           label: "Agent",
           value: enableAgent
-            ? `enabled · ${agentModel || "default model"}`
+            ? `enabled · ${llmLabel(agentModel)}`
             : "disabled",
         },
       ],
@@ -273,8 +265,12 @@ export default function RegistryActionModal({ address }: Props) {
       chain: chains[0],
       chains,
       kind: "custom",
-      proto: strategySpec?.source === "local" ? "Local template" : "Strategy Lab",
-      strategy: strategySpec?.name ?? contractName ?? "Custom strategy",
+      proto: strategySpec
+        ? strategySpec.source === "local"
+          ? "Local template"
+          : "Strategy Lab"
+        : "Manual strategy",
+      strategy: strategyLabel,
       strategySummary:
         strategySpec?.thesis ||
         description.trim() ||
@@ -300,8 +296,8 @@ export default function RegistryActionModal({ address }: Props) {
       creatorRewards,
       stakeEnabled,
       showCreatorRewards,
-      contractCode: hasSolidity ? strategyValue : undefined,
-      contractName: contractName || undefined,
+      contractCode: attachedCode || undefined,
+      contractName: attachedContractName || undefined,
       strategyModel: strategySpec?.model,
       agentEnabled: enableAgent,
       agentModel: enableAgent ? agentModel : undefined,
@@ -317,8 +313,9 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultCreatorRewards(creatorRewards);
     setVaultFee(fee);
     setFeeReceiver(trimmedReceiver);
-    setStrategy(strategyValue);
     setStrategySpec(strategySpec);
+    setEnableAgent(enableAgent);
+    setAgentModel(agentModel);
 
     addVault(vault);
     setOpen(false);
@@ -442,7 +439,7 @@ export default function RegistryActionModal({ address }: Props) {
                 one is usually the connected wallet; add as many as you need.
               </p>
               <div className="address-list-input">
-                {addresses.map((value, index) => (
+                {vaultAddresses.map((value, index) => (
                   <div className="address-row" key={index}>
                     <span className="address-row-index">
                       [{String(index).padStart(2, "0")}]
@@ -706,86 +703,83 @@ export default function RegistryActionModal({ address }: Props) {
               {enableAgent ? (
                 <div className="registry-agent-config">
                   <div className="field">
-                    <label htmlFor="registry-agent-key">OpenRouter API key</label>
-                    <input
-                      id="registry-agent-key"
-                      className="input"
-                      type="password"
-                      value={agentKey}
-                      placeholder="sk-or-v1-…"
-                      autoComplete="off"
-                      spellCheck={false}
-                      onChange={(event) => setAgentKey(event.target.value)}
-                    />
-                    <p className="field-hint">
-                      Kept in this dialog only. Never written to the vault or
-                      localStorage.
-                    </p>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="registry-agent-model">Model preference</label>
-                    <input
+                    <label htmlFor="registry-agent-model">Agent model</label>
+                    <select
                       id="registry-agent-model"
                       className="input"
-                      type="text"
                       value={agentModel}
-                      spellCheck={false}
                       onChange={(event) => setAgentModel(event.target.value)}
-                    />
+                    >
+                      {MODEL_OPTIONS.map((option) => (
+                        <option key={option.id} value={option.id}>
+                          {modelOptionLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="field-hint">
+                      OpenRouter access is provisioned by the Telos backend. The
+                      API key is never requested or stored in this form.
+                    </p>
                   </div>
                 </div>
               ) : null}
             </div>
 
-            <div className="field">
-              <label htmlFor="registry-strategy">
-                🧬 Strategy contract
-                {strategySpec ? (
-                  <span className="registry-attached">
-                    ATTACHED FROM STRATEGY LAB
-                  </span>
-                ) : null}
-              </label>
-              <textarea
-                id="registry-strategy"
-                className="input strategy-input registry-strategy"
-                value={strategyValue}
-                rows={hasSolidity ? 12 : 4}
-                placeholder="Paste the IStrategy Solidity contract — or use ✦ Create Strategy to generate one."
-                spellCheck={false}
-                onChange={(event) => setStrategyValue(event.target.value)}
-                required
-              />
-              <div className="registry-strategy-meta">
-                <span>
-                  {hasSolidity
-                    ? `${contractName || "Contract"} · ${lineCount} lines`
-                    : strategyValue
-                      ? "TEXT ONLY · no Solidity source"
-                      : "NO CONTRACT ATTACHED"}
+            <fieldset className="registry-group registry-strategy-summary">
+              <legend>
+                <span>🧬 Strategy</span>
+                <span className="registry-count">
+                  {strategySpec ? "ATTACHED" : "NOT ATTACHED"}
                 </span>
-                {strategyValidation ? (
-                  <span
-                    className={
-                      strategyValidation.ok
-                        ? "registry-pass"
-                        : "registry-fail"
-                    }
-                  >
-                    {strategyValidation.ok
-                      ? "VALIDATOR ✓"
-                      : `VALIDATOR ✗ ${strategyValidation.issues.length}`}
-                  </span>
-                ) : null}
-              </div>
-              {strategyValidation && !strategyValidation.ok ? (
-                <ul className="registry-issues">
-                  {strategyValidation.issues.slice(0, 4).map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
+              </legend>
+              {strategySpec ? (
+                <div className="registry-strategy-card">
+                  <div className="registry-strategy-head">
+                    <b>
+                      {strategySpec.name}{" "}
+                      <span className="registry-count">
+                        ${strategySpec.ticker}
+                      </span>
+                    </b>
+                    <span
+                      className={`registry-pill${
+                        attachedCode ? " is-pass" : " is-pending"
+                      }`}
+                    >
+                      {attachedCode ? "CONTRACT ✓" : "NO CONTRACT"}
+                    </span>
+                  </div>
+                  <div className="registry-strategy-tags">
+                    <span>{strategySpec.chain}</span>
+                    <span>{strategySpec.asset}</span>
+                    <span>{strategySpec.risk} RISK</span>
+                    <span>{strategySpec.fee}% FEE</span>
+                    {strategySpec.model ? (
+                      <span>{llmLabel(strategySpec.model)}</span>
+                    ) : null}
+                  </div>
+                  <p className="field-hint">
+                    {attachedCode
+                      ? `${attachedContractName || "Strategy"} · ${attachedLineCount} lines · IStrategy source attached.`
+                      : "Strategy metadata attached without a contract source."}{" "}
+                    The contract is created and reviewed in the strategy
+                    modal, not here.
+                  </p>
+                </div>
+              ) : (
+                <p className="field-hint">
+                  No strategy attached. Use <b>✦ Create Strategy</b> to generate
+                  and review the contract in its own modal, then create the vault
+                  from there.
+                  {strategy ? (
+                    <>
+                      {" "}
+                      Launch panel strategy type: <b>{strategy}</b>.
+                    </>
+                  ) : null}
+                </p>
+              )}
+            </fieldset>
           </div>
 
           {error ? (

@@ -66,7 +66,7 @@ const HARD_TIMEOUT_MS = 240_000;
 const MAX_REPAIRS = 2;
 // Free models sometimes echo the request instead of compiling. One strict
 // nudge is usually enough to get back on format.
-const NO_CONTRACT_PROMPT = `The user asked you to compile a strategy, but your last reply did not contain a Solidity contract. Do not repeat the request or apologize. If a required fact is genuinely missing, ask exactly ONE short question. Otherwise emit the strategy now: one short sentence, the META: line, then one fenced solidity block containing the COMPLETE file.`;
+const NO_CONTRACT_PROMPT = `The user asked you to compile a strategy, but your last reply did not contain a Solidity contract. Do not repeat the request or apologize. If a required fact is genuinely missing, ask exactly ONE short question. Otherwise emit the strategy now: one short sentence, then one fenced json block with every field (name, ticker, asset, chain, risk, fee, thesis, allocations, guardrails, contract) where contract is the COMPLETE Solidity file as a JSON string.`;
 const AUDIT_TIMEOUT_MS = 200_000;
 
 const WELCOME =
@@ -331,8 +331,8 @@ const RANDOM_DRAFTS: Draft[] = [
   { goal: "Stable yield", risk: "LOW", chain: "Telos", asset: "USDC", fee: 6, protocol: "Telos" },
 ];
 
-// The model streams prose first, then META, then the Solidity block. Showing
-// the JSON/code as it arrives looks broken, so only prose is rendered live.
+// The model streams prose first, then the strategy JSON object. Showing the
+// JSON/code as it arrives looks broken, so only prose is rendered live.
 
 function describeHttpError(status: number, detail: string): string {
   let extra = detail;
@@ -844,9 +844,9 @@ export default function StrategyChatModal({
           }
 
           const visible = visibleAnswer(answer);
-          // Always update: when the model jumps straight into META the visible
+          // Always update: when the model jumps straight into JSON the visible
           // prose is empty after the first character, and skipping empty
-          // updates used to leave a stray "M" on screen until the stream ended.
+          // updates used to leave a stray character on screen until the stream ended.
           const shown = visible || "drafting contract…";
           if (streamedId < 0) {
             streamedId = pushBot(shown).id;
@@ -900,10 +900,10 @@ export default function StrategyChatModal({
               .join("\n")}`,
           });
         }
-      } else if (/\bMETA\s*:|pragma\s+solidity/i.test(answer)) {
+      } else if (/\bMETA\s*:|"contract"\s*:|pragma\s+solidity/i.test(answer)) {
         pushMessage({
           role: "sys",
-          text: "the contract came back incomplete or unparseable — send \"retry\" to recompile it.",
+          text: "the strategy JSON came back incomplete or unparseable — send \"retry\" to recompile it.",
         });
       } else if (compileIntent && repairsRef.current < MAX_REPAIRS && !/\?\s*$/.test(parsed.text.trim())) {
         // The user asked for a contract but got prose. Nudge once with a format
