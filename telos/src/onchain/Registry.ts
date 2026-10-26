@@ -1,72 +1,65 @@
-import { createWalletClient, http } from "viem";
 import type { address } from "../types/solidity-types";
 import type { OnchainAgentManager } from "./OnchainAgent";
+import type { OnchainExecutor } from "./OnchainExecutor";
 //one hsared instance
 export class Registry {
-  client: any;
-  registry: any = "0x";
-  protocolFeeReciever: any;
-  protocolFee: any;
-  endpoint: any;
-  agentManager: OnchainAgentManager;
+  protected client: any;
+  protected registry: any = "0x";
+  protected protocolFeeReciever: any;
+  protected protocolFee: any;
+  protected endpoint: any;
+  protected agentManager: OnchainAgentManager;
+  protected onchainExecutor: OnchainExecutor;
   constructor(
     _registry: address,
     _protocolFeeReciever: any,
     _protocolFee: any,
     _endpoint: any,
-    _agentManaget: OnchainAgentManager,
+    _agentManager: OnchainAgentManager,
+    _onchainExecutor: OnchainExecutor,
   ) {
     this.registry = _registry;
     this.protocolFee = _protocolFee;
     this.protocolFeeReciever = _protocolFeeReciever;
     this.endpoint = _endpoint;
-    this.agentManager = _agentManaget;
+    this.agentManager = _agentManager;
+    this.onchainExecutor = _onchainExecutor;
   }
   //[0, {}]
-  async deployHubVault(owner: any, deployParams: any, isAgent: boolean) {
+  async deployHubVault(
+    userName: string,
+    owner: address,
+    model: string,
+    deployParams: any,
+    isAgent: boolean,
+  ) {
     try {
       if (isAgent) {
+        const agentKey = await this.createLLMAgent(userName, owner, model);
         // await concurrency to handle multple scheduled tscthis.createAgent(deployParams[2], deployParams[3]);
       }
       deployParams.fees.protocolFee = this.protocolFee;
       deployParams.fees.protocolFeeReciever = this.protocolFeeReciever;
 
       deployParams[1] = this.encodeDeployParams(deployParams[1]);
-      await this.writeContract({
+      await this.onchainExecutor.writeContract({
         address: this.registry,
         functionName: "deployHubVault",
         args: [owner, this.encodeDeployParams(deployParams)],
       });
+      return true;
     } catch (error) {
       console.log(error);
+      return false;
     }
   }
 
-  async createAgent(username: any, hasKey: boolean) {
-    await this.agentManager.createAgent(username, hasKey);
+  async createLLMAgent(username: any, creatorAddr: address, model: string) {
+    return await this.agentManager.createAgent(username, creatorAddr, model);
   }
-
-  async getProtocolFeeReciever() {}
 
   async encodeDeployParams(params: any[]) {
     const ecnoder = new TextEncoder();
     return ecnoder.encode(...params);
-  }
-
-  async writeContract(params: any) {
-    try {
-      await this.client.writeContract(params);
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  async createClient(accountAddress: address, chain: any) {
-    const walletClient = createWalletClient({
-      account: accountAddress,
-      chain: chain,
-      transport: http(),
-    });
-    this.client = walletClient;
   }
 }

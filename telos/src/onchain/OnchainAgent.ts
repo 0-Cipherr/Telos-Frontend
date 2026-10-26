@@ -28,14 +28,9 @@ export class OnchainAgentManager {
     this.llm = _llm;
   }
 
-  async createAgent(
-    username: any,
-    creator: address,
-    model: string,
-    hasKey: boolean,
-  ) {
+  async createAgent(username: any, creator: address, model: string) {
     try {
-      const result = await this.llm.createAgent(username, hasKey);
+      const result = await this.llm.createAgent(username);
       const agent = new Agent(
         this.currentAgentID,
         this.llm,

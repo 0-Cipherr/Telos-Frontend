@@ -31,29 +31,25 @@ export class OpenRouter extends ModelManager implements LLM {
   }
   //schecudeled taske very week simaltanouelsy execute eachtask for all agents
 
-  async createAgent(userName: string, hasKey: boolean) {
+  async createAgent(userName: string) {
     try {
-      if (hasKey) {
-      } else {
-        const result: any = await fetch(this.createKeyEndpoint, {
-          method: "POST",
-          headers: {
-            "Authorization: Bearer:": `<YOUR_MANAGEMENT_TOKEN>`,
-            "Content-Type": " application/json",
-          },
-          body: JSON.stringify({
-            name: `API Key for ${userName || "AUser"}`,
-            limit: 0.000001,
-            limit_reset: "monthly",
-            expires_at: "2027-12-31T23:59:59Z",
-            include_byok_in_limit: true,
-          }),
-        });
-        await this.uploadAgent({ name: userName });
-        const json: any = await result.json();
-        return json?.key;
-      }
-      return {};
+      const result: any = await fetch(this.createKeyEndpoint, {
+        method: "POST",
+        headers: {
+          "Authorization: Bearer:": `<YOUR_MANAGEMENT_TOKEN>`,
+          "Content-Type": " application/json",
+        },
+        body: JSON.stringify({
+          name: `API Key for ${userName || "AUser"}`,
+          limit: 0.000001,
+          limit_reset: "monthly",
+          expires_at: "2027-12-31T23:59:59Z",
+          include_byok_in_limit: true,
+        }),
+      });
+      await this.uploadAgent({ name: userName });
+      const json: any = await result.json();
+      return json?.key;
     } catch (error) {
       console.log(error);
       return {};

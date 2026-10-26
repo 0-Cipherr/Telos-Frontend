@@ -1,6 +1,7 @@
 import type TelosAPI from "../api-handler/Telos/telos-api-methods";
+import { ModelManager } from "../onchain/ModelManager";
 
-export default interface LLM {
+export default interface LLM extends ModelManager {
   endpoint: any;
   createKeyEndpoint: any;
   apiKey: any;
@@ -8,7 +9,7 @@ export default interface LLM {
   managementkey: any;
   setAPI(_telos: TelosAPI): void;
 
-  createAgent(userName: string, hasKey: boolean): any;
+  createAgent(userName: string): any;
   setApiKey(_apiKey: any): void;
   checkUsage(keyHash: any): any;
   uploadAgent(agentInfo: any): void;
