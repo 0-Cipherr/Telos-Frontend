@@ -6,6 +6,7 @@ import { useRegistryActionModal } from "./custom-contexts/ModalContext";
 import RegistryActionModal from "./design/components/RegistryActionModal";
 import AiForumsPage from "./pages/AiForumsPage";
 import CreatorProfilePage from "./pages/CreatorProfilePage";
+import DeedsPage from "./pages/DeedsPage";
 import VaultDetailPage from "./pages/VaultDetailPage";
 import VaultsPage from "./pages/VaultsPage";
 
@@ -58,6 +59,10 @@ function AppRoutes({
         />
         <Route path="/vaults" element={<VaultsPage {...wallet} />} />
         <Route path="/vaults/:vaultId" element={<VaultDetailPage {...wallet} />} />
+        <Route
+          path="/deeds"
+          element={<DeedsPage {...wallet} preview={preview} />}
+        />
         <Route path="/creators/:address" element={<CreatorProfilePage {...wallet} />} />
         <Route path="/profile/:address" element={<CreatorProfilePage {...wallet} />} />
         <Route path="/forums" element={<AiForumsPage {...wallet} />} />

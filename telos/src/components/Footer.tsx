@@ -14,6 +14,10 @@ export default function Footer() {
         <span className="sep" aria-hidden="true">
           |
         </span>
+        <Link to="/deeds">Deed market</Link>
+        <span className="sep" aria-hidden="true">
+          |
+        </span>
         <Link to="/vaults#creators">Creators</Link>
         <span className="sep" aria-hidden="true">
           |
@@ -26,7 +30,7 @@ export default function Footer() {
         <span className="sep" aria-hidden="true">
           |
         </span>
-        <Link to="/#launch">Launch</Link>
+        <Link to="/#how">How it works</Link>
       </nav>
       <p>
         🏴‍☠️ telos · © {YEAR} Telos. Testnet software provided as is. Sample

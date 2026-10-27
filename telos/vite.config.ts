@@ -119,6 +119,7 @@ function llmProxy(): Plugin {
       reasoning?: unknown;
       stream?: unknown;
       purpose?: unknown;
+      plugins?: unknown;
     };
     try {
       payload = JSON.parse(await readBody(req));
@@ -168,6 +169,18 @@ function llmProxy(): Plugin {
         // the first visible token. The lab wants answers, not a monologue, so
         // ask OpenRouter to skip it. Providers without reasoning ignore this.
         if (reasoningHint) body.reasoning = { enabled: false };
+
+        // Let the browser ask for live web results. Only the OpenRouter web
+        // plugin is forwarded, so a client cannot inject arbitrary plugins.
+        if (Array.isArray(payload.plugins)) {
+          const webPlugins = payload.plugins.filter(
+            (plugin): plugin is Record<string, unknown> =>
+              Boolean(plugin) &&
+              typeof plugin === "object" &&
+              (plugin as { id?: unknown }).id === "web",
+          );
+          if (webPlugins.length > 0) body.plugins = webPlugins;
+        }
 
         let response: Response;
         try {

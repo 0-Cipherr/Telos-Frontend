@@ -7,11 +7,27 @@ class TelosAPI {
     this.endpoints = _endpoints;
     this.key = _key;
   }
-
+  //to api all parameters passed in as the structre is when creating and querying array format
   getAuthParam() {
     return {
       Authorization: `Bearer ${this.key}`,
     };
+  }
+
+  async uploadVault(params: any[]): Promise<any[] | null> {
+    try {
+      const authParam = this.getAuthParam();
+      const result = await this.executeFetch(
+        authParam,
+        this.endpoints.updloadVaults,
+        "POST",
+      );
+      return result;
+    } catch (error) {
+      console.log(error);
+
+      return null;
+    }
   }
 
   async uploadAgent(_agentInfo: any) {
@@ -54,14 +70,15 @@ class TelosAPI {
   async executeFetch(body: any, endpoint: string, method: string) {
     try {
       const reqURL: string = this.baseURL + endpoint;
-      const fetchRes = await fetch(reqURL, {
+      const fetchRes: any = await fetch(reqURL, {
         method,
         body,
       });
+
       return await fetchRes.json();
     } catch (error) {
       console.log(error);
-      return {};
+      return null;
     }
   }
 

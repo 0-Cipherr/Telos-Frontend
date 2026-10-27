@@ -1,3 +1,4 @@
+import type { WriteContractReturnType } from "viem";
 import type TelosAPI from "../api-handler/Telos/telos-api-methods";
 import type { address } from "../types/solidity-types";
 import type { OnchainAgentManager } from "./OnchainAgent";
@@ -44,7 +45,7 @@ export class Registry {
     model: string | null,
     deployParams: any,
     isAgent: boolean,
-  ) {
+  ): Promise<WriteContractReturnType | null> {
     try {
       if (isAgent) {
         const _model: string = model == null ? await this.assignModel() : model;
@@ -76,15 +77,17 @@ export class Registry {
           }
           */
       deployParams[1] = this.encodeDeployParams(deployParams[1]); //index one is ther dpeloymernt params
-      await this.onchainExecutor.writeContract({
-        address: this.registry,
-        functionName: "deployHubVault",
-        args: [owner, this.encodeDeployParams(deployParams)],
-      });
-      return true;
+      const reciept: WriteContractReturnType | null =
+        await this.onchainExecutor.writeContract({
+          address: this.registry,
+          functionName: "deployHubVault",
+          args: [owner, this.encodeDeployParams(deployParams)],
+        });
+      return reciept;
     } catch (error) {
       console.log(error);
-      throw new Error("Transaction was not processed please try again!");
+      // throw new Error("Transaction was not processed please try again!");
+      return null;
     }
   }
 

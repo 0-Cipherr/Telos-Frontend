@@ -5,11 +5,13 @@ import { BrowserRouter } from "react-router-dom";
 import App, { PreviewApp } from "./App";
 import SplashScreen from "./SplashScreen";
 import { CreatedVaultsProvider } from "./custom-contexts/CreatedVaultsContext";
+import { DeedMarketProvider } from "./custom-contexts/DeedMarketContext";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
 import { StrategyLauncherProvider } from "./custom-contexts/StrategyLauncherContext";
 import { TxConfirmerProvider } from "./custom-contexts/TxConfirmerContext";
 import "./index.css";
 import "./tailwind.css";
+import "./deeds.css";
 
 const appId = import.meta.env.VITE_PRIVY_APP_ID as string | undefined;
 const missing =
@@ -41,11 +43,13 @@ const previewReason: "missing" | "insecure" | null = missing
 function Providers({ children }: { children: ReactNode }) {
   return (
     <CreatedVaultsProvider>
-      <TxConfirmerProvider>
-        <RegistryActionModalProvider registry={""}>
-          <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
-        </RegistryActionModalProvider>
-      </TxConfirmerProvider>
+      <DeedMarketProvider>
+        <TxConfirmerProvider>
+          <RegistryActionModalProvider registry={""}>
+            <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
+          </RegistryActionModalProvider>
+        </TxConfirmerProvider>
+      </DeedMarketProvider>
     </CreatedVaultsProvider>
   );
 }

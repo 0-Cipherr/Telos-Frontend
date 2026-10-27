@@ -14,9 +14,10 @@ type NavbarProps = {
 
 const LINKS = [
   { to: "/vaults", label: "Vaults", index: "01" },
-  { to: "/forums", label: "AI Forums", index: "02" },
-  { to: "/#calculator", label: "Calculator", index: "03" },
-  { to: "/#launch", label: "Launch", index: "04" },
+  { to: "/deeds", label: "Deeds", index: "02" },
+  { to: "/forums", label: "AI Forums", index: "03" },
+  { to: "/#calculator", label: "Calculator", index: "04" },
+  { to: "/#how", label: "How it works", index: "05" },
 ];
 
 export default function Navbar({
@@ -46,17 +47,18 @@ export default function Navbar({
   return (
     <header className="topbar">
       <div className="topbar-inner">
+        <Link to="/" className="topbar-brand">
+          tel<span className="lime-text">os</span>
+        </Link>
         <nav className="toplinks" aria-label="Main">
-          <Link to="/" className="topbar-brand">
-            tel<span className="lime-text">os</span>
-          </Link>
-          <span className="sep" aria-hidden="true">
-            |
-          </span>
           {LINKS.map((link) => {
             const active =
-              (link.to === "/vaults" && location.pathname.startsWith("/vaults")) ||
-              (link.to === "/forums" && location.pathname.startsWith("/forums"));
+              (link.to === "/vaults" &&
+                location.pathname.startsWith("/vaults")) ||
+              (link.to === "/deeds" &&
+                location.pathname.startsWith("/deeds")) ||
+              (link.to === "/forums" &&
+                location.pathname.startsWith("/forums"));
             return (
               <span className="toplink-wrap" key={link.to}>
                 <Link
@@ -88,8 +90,8 @@ export default function Navbar({
             onClick={openStrategy}
             title="Draft a strategy with the LLM strategist"
           >
-            <span className="nav-strategy-spark" aria-hidden="true">
-              ✦
+            <span className="nav-strategy-code" aria-hidden="true">
+              {"{}"}
             </span>
             Create Strategy
           </button>

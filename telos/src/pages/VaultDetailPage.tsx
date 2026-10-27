@@ -19,6 +19,7 @@ import {
   creatorRewardLabel,
   formatUsd,
   formatUsdCompact,
+  vaultLaunchpadPairs,
   weeklyEarnings,
 } from "../vaults";
 
@@ -96,6 +97,7 @@ export default function VaultDetailPage({
   const launchpadNames =
     launchpadItems.map((item) => `${item.emoji} ${item.name}`).join(" · ") ||
     "—";
+  const launchpadAssets = vaultLaunchpadPairs(vault);
   const thesisPost = AI_FORUM_POSTS.find((post) => post.vaultId === vault.id);
   const runningModel = describeLLM(vault.agentModel);
   const strategyModel = describeLLM(vault.strategyModel);
@@ -527,41 +529,54 @@ export default function VaultDetailPage({
                     </dd>
                   </div>
                 ) : null}
-                {vault.launchpadStock ? (
+                {launchpadAssets.length ? (
                   <div>
-                    <dt>PONS STOCK PAIR</dt>
-                    <dd className="launchpad-mini">
-                      <img
-                        className="launchpad-logo"
-                        src={vault.launchpadStock.logo}
-                        alt=""
-                        width={18}
-                        height={18}
-                        loading="lazy"
-                      />
-                      {vault.launchpadStock.symbol} ·{" "}
-                      {vault.launchpadStock.name} ·{" "}
-                      {shortAddress(vault.launchpadStock.address)} · rewards in{" "}
-                      {vault.launchpadStock.symbol}
-                    </dd>
-                  </div>
-                ) : null}
-                {vault.launchpadToken ? (
-                  <div>
-                    <dt>HOOKR TOKEN</dt>
-                    <dd className="launchpad-mini">
-                      <img
-                        className="launchpad-logo launchpad-logo--hookr"
-                        src={vault.launchpadToken.logo ?? "/launchpads/hookr.png"}
-                        alt=""
-                        width={18}
-                        height={18}
-                        loading="lazy"
-                      />
-                      {vault.launchpadToken.symbol} · {vault.launchpadToken.name}
-                      {vault.launchpadToken.address
-                        ? ` · ${shortAddress(vault.launchpadToken.address)}`
-                        : ""}
+                    <dt>LAUNCH ASSETS</dt>
+                    <dd className="launchpad-asset-list">
+                      {launchpadAssets.map((pair) => (
+                        <span
+                          className={`launchpad-asset launchpad-asset--${pair.launchpad}`}
+                          key={`${pair.launchpad}-${pair.kind}-${pair.symbol}`}
+                          title={
+                            pair.address
+                              ? `${pair.name} · ${pair.address}`
+                              : pair.name
+                          }
+                        >
+                          <img
+                            className={`launchpad-logo launchpad-logo--${pair.launchpad}`}
+                            src={
+                              pair.logo ??
+                              (pair.launchpad === "pons"
+                                ? "/launchpads/pons.png"
+                                : "/launchpads/hookr.png")
+                            }
+                            alt=""
+                            width={22}
+                            height={22}
+                            loading="lazy"
+                          />
+                          <span className="launchpad-asset-copy">
+                            <span className="launchpad-asset-head">
+                              <b>{pair.symbol}</b>
+                              <span>{pair.name}</span>
+                            </span>
+                            <span className="launchpad-asset-meta">
+                              {pair.launchpad === "pons"
+                                ? "Pons"
+                                : "Hookr.fun"}
+                              {pair.kind === "stock"
+                                ? " stock pair"
+                                : pair.pairedWith
+                                  ? ` · paired with ${pair.pairedWith}`
+                                  : " launch token"}
+                              {pair.address
+                                ? ` · ${shortAddress(pair.address)}`
+                                : ""}
+                            </span>
+                          </span>
+                        </span>
+                      ))}
                     </dd>
                   </div>
                 ) : null}

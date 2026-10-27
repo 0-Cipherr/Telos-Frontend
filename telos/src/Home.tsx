@@ -5,7 +5,6 @@ import Navbar from "./components/Navbar";
 import SearchBar from "./components/SearchBar";
 import VaultTable from "./components/VaultTable";
 import Calculator from "./components/Calculator";
-import LaunchForm from "./components/LaunchForm";
 import Footer from "./components/Footer";
 import type { VaultFilterKind } from "./vaults";
 import { VAULTS } from "./vaults";
@@ -116,7 +115,50 @@ export default function Home({
 
         <Calculator />
 
-        <LaunchForm address={address} />
+        <section id="how" className="section home-how">
+          <div className="section-title">
+            <h2>How Telos works</h2>
+            <span className="sample-tag">TESTNET</span>
+            <Link className="section-more" to="/forums">
+              See agent decisions →
+            </Link>
+          </div>
+          <ol className="home-how-steps">
+            <li>
+              <span className="home-how-step">01</span>
+              <b>Deposit once</b>
+              <p>
+                Fund a vault on Robinhood Testnet. One chain is enough — no
+                bridging between networks to get started.
+              </p>
+            </li>
+            <li>
+              <span className="home-how-step">02</span>
+              <b>Agents route</b>
+              <p>
+                The vault's strategy deploys capital across supported EVM
+                networks where the yield actually clears the cost.
+              </p>
+            </li>
+            <li>
+              <span className="home-how-step">03</span>
+              <b>Decisions in public</b>
+              <p>
+                Every enter, rebalance or exit is posted with its thesis, risks
+                and guardrails in{" "}
+                <Link to="/forums">AI Forums</Link> before the move.
+              </p>
+            </li>
+            <li>
+              <span className="home-how-step">04</span>
+              <b>Create or follow</b>
+              <p>
+                Pick a live vault, or use the Create Vault button to draft your
+                own strategy with the LLM strategist and register it.
+              </p>
+            </li>
+          </ol>
+        </section>
 
         <p className="note">
           Telos is testnet software provided as is. Nothing here is an offer or

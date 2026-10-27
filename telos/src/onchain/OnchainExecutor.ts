@@ -1,17 +1,33 @@
-import { createWalletClient, http } from "viem";
+import {
+  createWalletClient,
+  http,
+  type WalletClient,
+  type WriteContractReturnType,
+} from "viem";
 import type { address } from "../types/solidity-types";
 
 export class OnchainExecutor {
-  protected client: any;
+  protected client: WalletClient<any | null>;
 
-  constructor() {}
+  constructor(_client: WalletClient<any | null>) {
+    this.client = _client;
+  }
 
-  async writeContract(params: any) {
+  async writeContract(params: any): Promise<WriteContractReturnType | null> {
     try {
-      await this.client.writeContract(params);
+      return await this.client.writeContract(params);
     } catch (error) {
       console.log(error);
+      return null;
     }
+  }
+
+  /** Address of the connected signer, when one has been configured. */
+  getAccountAddress(): address | undefined {
+    const account = this.client?.account;
+    if (!account) return undefined;
+    if (typeof account === "string") return account as address;
+    return account.address as address | undefined;
   }
 
   async updateAccount(_account: any) {
@@ -23,11 +39,12 @@ export class OnchainExecutor {
   }
 
   async createClient(accountAddress: address, chain: any) {
-    const walletClient = createWalletClient({
+    const walletClient: WalletClient<any> = createWalletClient({
       account: accountAddress,
       chain: chain,
       transport: http(),
     });
+
     this.client = walletClient;
   }
 }

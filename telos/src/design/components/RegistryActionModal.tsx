@@ -1,26 +1,16 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { isAddress, parseEther } from "viem";
+import { isAddress } from "viem";
 import { EVM_CHAINS } from "../../chains";
 import { useCreatedVaults } from "../../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../../custom-contexts/TxConfirmerContext";
-import {
-  PONS_STOCK_TOKENS,
-  type PonsStockToken,
-} from "../../Launchpads/Pons";
-import { extractContractName } from "../../strategies/strategy-standard";
-import {
-  MODEL_OPTIONS,
-  llmLabel,
-  modelOptionLabel,
-} from "../../llm-models";
+import { llmLabel } from "../../llm-models";
+import { validateStrategySource } from "../../strategies/strategy-standard";
 import { lockBodyScroll } from "../../utils/scrollLock";
 import {
   CREATOR_REWARDS,
   LAUNCHPADS,
-  MAX_CREATOR_FEE_PERCENT,
-  MAX_TOTAL_FEE_PERCENT,
   creatorRewardLabel,
   type CreatorRewardMode,
   type Vault,
@@ -68,31 +58,26 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultLaunchpads,
     setVaultCreatorRewards,
     setVaultFee,
-    setVaultFeeWei,
-    protocolFee,
     setFeeReceiver,
+    setStrategy,
     setStrategySpec,
-    enableAgent,
-    setEnableAgent,
-    agentModel,
-    setAgentModel,
   } = useRegistryActionModal();
 
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [description, setDescription] = useState("");
-  const [fee, setFee] = useState(MAX_CREATOR_FEE_PERCENT);
+  const [fee, setFee] = useState(5);
   const [feeReceiverValue, setFeeReceiverValue] = useState("");
+  const [strategyValue, setStrategyValue] = useState("");
   const [chains, setChains] = useState<string[]>(["Base"]);
   const [launchpads, setLaunchpads] = useState<string[]>(["pons"]);
-  const [ponsStock, setPonsStock] = useState<PonsStockToken>(
-    PONS_STOCK_TOKENS[0],
-  );
   const [creatorRewards, setCreatorRewards] =
     useState<CreatorRewardMode>("fees");
   const [stakeEnabled, setStakeEnabled] = useState(true);
   const [showCreatorRewards, setShowCreatorRewards] = useState(true);
-  const [agentEco, setAgentEco] = useState(false);
+  const [addresses, setAddresses] = useState<string[]>([""]);
+  const [agentKey, setAgentKey] = useState("");
+  const [agentModel, setAgentModel] = useState("openai/gpt-4o-mini");
   const [error, setError] = useState("");
 
   // Keep the form in sync with the calling flow (strategy lab, launch panel,
@@ -102,30 +87,17 @@ export default function RegistryActionModal({ address }: Props) {
     setName(vaultName || "");
     setTicker(vaultTicker || "");
     setDescription(vaultDescription || strategySpec?.thesis || "");
-    setFee(
-      Math.min(
-        MAX_CREATOR_FEE_PERCENT,
-        Math.max(
-          0,
-          Number.isFinite(vaultFee) ? vaultFee : MAX_CREATOR_FEE_PERCENT,
-        ),
-      ),
-    );
+    setFee(Number.isFinite(vaultFee) ? vaultFee : 5);
     setFeeReceiverValue(feeReceiver || address || "");
+    setStrategyValue(strategy || "");
     setChains(vaultChains.length ? vaultChains : ["Base"]);
     setLaunchpads(vaultLaunchpads.length ? vaultLaunchpads : ["pons"]);
-    setPonsStock(PONS_STOCK_TOKENS[0]);
     setCreatorRewards(vaultCreatorRewards);
     setStakeEnabled(true);
     setShowCreatorRewards(true);
-    setAgentEco(false);
     const seededAddresses =
-      vaultAddresses.length > 0
-        ? vaultAddresses
-        : address
-          ? [address]
-          : [""];
-    setVaultAddresses(seededAddresses.length ? seededAddresses : [""]);
+      vaultAddresses.length > 0 ? vaultAddresses : address ? [address] : [""];
+    setAddresses(seededAddresses.length ? seededAddresses : [""]);
     setError("");
     // The context setters are stable state functions; opening the dialog is the
     // only moment we want to overwrite the local draft.
@@ -145,18 +117,17 @@ export default function RegistryActionModal({ address }: Props) {
     };
   }, [open, setOpen]);
 
-  // The contract itself lives in the strategy modal. This form only reads the
-  // attached strategy metadata, so nothing here needs to parse or edit Solidity.
-  const attachedCode = strategySpec?.code?.trim() ?? "";
-  const attachedContractName = attachedCode
-    ? extractContractName(attachedCode)
-    : "";
-  const attachedLineCount = attachedCode ? attachedCode.split("\n").length : 0;
-  const strategyLabel = strategySpec?.name || strategy || "Custom strategy";
+  const hasSolidity = /pragma\s+solidity/i.test(strategyValue);
+  const strategyValidation = useMemo(
+    () => (hasSolidity ? validateStrategySource(strategyValue) : null),
+    [hasSolidity, strategyValue],
+  );
+  const contractName =
+    strategyValue.match(/contract\s+([A-Za-z_]\w*)\s+is\s+IStrategy/)?.[1] ??
+    "";
+  const lineCount = strategyValue ? strategyValue.split("\n").length : 0;
 
-  const cleanAddresses = vaultAddresses
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const cleanAddresses = addresses.map((item) => item.trim()).filter(Boolean);
   const badAddress = cleanAddresses.find((item) => !isAddress(item));
 
   const toggleChain = (chain: string) => {
@@ -176,16 +147,15 @@ export default function RegistryActionModal({ address }: Props) {
   };
 
   const updateAddress = (index: number, value: string) => {
-    setVaultAddresses((current) =>
+    setAddresses((current) =>
       current.map((item, itemIndex) => (itemIndex === index ? value : item)),
     );
   };
 
-  const addAddress = () =>
-    setVaultAddresses((current) => [...current, ""]);
+  const addAddress = () => setAddresses((current) => [...current, ""]);
 
   const removeAddress = (index: number) => {
-    setVaultAddresses((current) =>
+    setAddresses((current) =>
       current.length === 1
         ? [""]
         : current.filter((_, itemIndex) => itemIndex !== index),
@@ -198,18 +168,17 @@ export default function RegistryActionModal({ address }: Props) {
     const trimmedName = name.trim();
     const trimmedTicker = ticker.trim().toUpperCase();
     const trimmedReceiver = feeReceiverValue.trim();
+    const trimmedStrategy = strategyValue.trim();
 
     if (!trimmedName) return setError("A vault name is required.");
     if (!trimmedTicker) return setError("A ticker is required.");
     if (!trimmedReceiver || !isAddress(trimmedReceiver)) {
       return setError("Fee receiver must be a valid EVM address.");
     }
-    if (fee < 0 || fee > MAX_CREATOR_FEE_PERCENT) {
-      return setError(
-        `Creator fee must be between 0 and ${MAX_CREATOR_FEE_PERCENT}%.`,
-      );
-    }
-    if (chains.length === 0) return setError("Select at least one EVM network.");
+    if (fee < 0 || fee > 8)
+      return setError("Creator fee must be between 0 and 8%.");
+    if (chains.length === 0)
+      return setError("Select at least one EVM network.");
     if (launchpads.length === 0) {
       return setError("Select at least one launchpad listing.");
     }
@@ -218,6 +187,18 @@ export default function RegistryActionModal({ address }: Props) {
     }
     if (badAddress) {
       return setError(`Invalid address in the array: ${badAddress}`);
+    }
+    if (!trimmedStrategy) {
+      return setError(
+        "Attach a strategy contract. Use ✦ Create Strategy to generate one.",
+      );
+    }
+    if (strategyValidation && !strategyValidation.ok) {
+      return setError(
+        `Contract validator failed: ${strategyValidation.issues
+          .slice(0, 3)
+          .join(" · ")}`,
+      );
     }
 
     const launchpadNames = launchpads
@@ -235,46 +216,33 @@ export default function RegistryActionModal({ address }: Props) {
         { label: "Ticker", value: trimmedTicker },
         { label: "Fee receiver", value: shortAddress(trimmedReceiver) },
         { label: "Creator fee", value: `${fee}%` },
-        { label: "Protocol fee", value: `${protocolFee}%` },
-        { label: "Total fees", value: `${fee + protocolFee}%` },
         {
           label: "Strategy",
-          value: strategySpec
-            ? attachedCode
-              ? `${attachedContractName || strategySpec.name} · ${attachedLineCount} lines · IStrategy`
-              : `${strategySpec.name} · no contract source`
-            : `${strategyLabel} · no contract source`,
+          value: hasSolidity
+            ? `${contractName || "Contract"} · ${lineCount} lines · IStrategy`
+            : "Text strategy (no Solidity attached)",
         },
         {
           label: "Strategy model",
-          value: strategySpec?.model ? llmLabel(strategySpec.model) : "not recorded",
+          value: strategySpec?.model
+            ? llmLabel(strategySpec.model)
+            : "not recorded",
         },
         { label: "Networks", value: `${chains.length} EVM networks` },
         { label: "Launchpads", value: launchpadNames },
-        ...(launchpads.includes("pons")
-          ? [
-              {
-                label: "Pons stock pair",
-                value: `${ponsStock.symbol} · ${shortAddress(ponsStock.address)}`,
-              },
-              {
-                label: "Pons terms",
-                value: `1B supply · 1% curve fee · rewards paid in ${ponsStock.symbol}`,
-              },
-            ]
-          : []),
         {
           label: "Creator rewards",
           value: creatorRewardLabel(creatorRewards),
         },
         {
           label: "Token features",
-          value: [
-            stakeEnabled ? "staking" : null,
-            showCreatorRewards ? "creator rewards" : null,
-          ]
-            .filter(Boolean)
-            .join(" · ") || "none",
+          value:
+            [
+              stakeEnabled ? "staking" : null,
+              showCreatorRewards ? "creator rewards" : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "none",
         },
         {
           label: "Address array",
@@ -285,17 +253,9 @@ export default function RegistryActionModal({ address }: Props) {
         {
           label: "Agent",
           value: enableAgent
-            ? `enabled · ${llmLabel(agentModel)}`
+            ? `enabled · ${agentModel || "default model"}`
             : "disabled",
         },
-        ...(enableAgent && agentEco
-          ? [
-              {
-                label: "Telos Eco",
-                value: "weekly strategy discovery · shared results",
-              },
-            ]
-          : []),
       ],
       note: "Testnet only. Deployment is simulated in this build — no contract call is made.",
     });
@@ -313,12 +273,9 @@ export default function RegistryActionModal({ address }: Props) {
       chain: chains[0],
       chains,
       kind: "custom",
-      proto: strategySpec
-        ? strategySpec.source === "local"
-          ? "Local template"
-          : "Strategy Lab"
-        : "Manual strategy",
-      strategy: strategyLabel,
+      proto:
+        strategySpec?.source === "local" ? "Local template" : "Strategy Lab",
+      strategy: strategySpec?.name ?? contractName ?? "Custom strategy",
       strategySummary:
         strategySpec?.thesis ||
         description.trim() ||
@@ -333,7 +290,6 @@ export default function RegistryActionModal({ address }: Props) {
       tvl: "0",
       tvlUsd: 0,
       fee,
-      protocolFee,
       creator: shortAddress(trimmedReceiver),
       creatorAddress: trimmedReceiver,
       color: "#8fd400",
@@ -342,23 +298,14 @@ export default function RegistryActionModal({ address }: Props) {
       createdAt: now.toISOString().slice(0, 10),
       addresses: cleanAddresses,
       launchpads,
-      launchpadStock: launchpads.includes("pons") ? { ...ponsStock } : undefined,
-      launchpadToken: launchpads.includes("hookr")
-        ? {
-            symbol: trimmedTicker,
-            name: trimmedName,
-            logo: "/launchpads/hookr.png",
-          }
-        : undefined,
       creatorRewards,
       stakeEnabled,
       showCreatorRewards,
-      contractCode: attachedCode || undefined,
-      contractName: attachedContractName || undefined,
+      contractCode: hasSolidity ? strategyValue : undefined,
+      contractName: contractName || undefined,
       strategyModel: strategySpec?.model,
       agentEnabled: enableAgent,
       agentModel: enableAgent ? agentModel : undefined,
-      agentEco: enableAgent ? agentEco : false,
     };
 
     setOwner(trimmedReceiver);
@@ -369,13 +316,10 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultAddresses(cleanAddresses);
     setVaultLaunchpads(launchpads);
     setVaultCreatorRewards(creatorRewards);
-    // The form shows percent; the provider/deploy payload receives ethers.
     setVaultFee(fee);
-    setVaultFeeWei(parseEther((fee / 100).toString()));
     setFeeReceiver(trimmedReceiver);
+    setStrategy(strategyValue);
     setStrategySpec(strategySpec);
-    setEnableAgent(enableAgent);
-    setAgentModel(agentModel);
 
     addVault(vault);
     setOpen(false);
@@ -466,23 +410,12 @@ export default function RegistryActionModal({ address }: Props) {
                   className="input"
                   type="number"
                   min={0}
-                  max={MAX_CREATOR_FEE_PERCENT}
+                  max={8}
                   step={1}
                   value={fee}
-                  onChange={(event) =>
-                    setFee(
-                      Math.min(
-                        MAX_CREATOR_FEE_PERCENT,
-                        Math.max(0, Number(event.target.value)),
-                      ),
-                    )
-                  }
+                  onChange={(event) => setFee(Number(event.target.value))}
                 />
-                <p className="field-hint">
-                  Protocol fee: {protocolFee}% · total: {fee + protocolFee}%.
-                  Creator fee is capped at {MAX_CREATOR_FEE_PERCENT}% so total
-                  fees stay at {MAX_TOTAL_FEE_PERCENT}% or less.
-                </p>
+                <p className="field-hint">Hard-capped at 8% by the standard.</p>
               </div>
             </div>
 
@@ -510,7 +443,7 @@ export default function RegistryActionModal({ address }: Props) {
                 one is usually the connected wallet; add as many as you need.
               </p>
               <div className="address-list-input">
-                {vaultAddresses.map((value, index) => (
+                {addresses.map((value, index) => (
                   <div className="address-row" key={index}>
                     <span className="address-row-index">
                       [{String(index).padStart(2, "0")}]
@@ -520,7 +453,7 @@ export default function RegistryActionModal({ address }: Props) {
                       type="text"
                       value={value}
                       placeholder={
-                        index === 0 ? address ?? "0x… (owner)" : "0x…"
+                        index === 0 ? (address ?? "0x… (owner)") : "0x…"
                       }
                       spellCheck={false}
                       onChange={(event) =>
@@ -575,7 +508,9 @@ export default function RegistryActionModal({ address }: Props) {
                   <button
                     type="button"
                     className="linklike"
-                    onClick={() => setChains(EVM_CHAINS.map((item) => item.name))}
+                    onClick={() =>
+                      setChains(EVM_CHAINS.map((item) => item.name))
+                    }
                   >
                     Select all
                   </button>
@@ -647,7 +582,8 @@ export default function RegistryActionModal({ address }: Props) {
                       />
                       <span className="launchpad-copy">
                         <b>
-                          <span aria-hidden="true">{item.emoji}</span> {item.name}
+                          <span aria-hidden="true">{item.emoji}</span>{" "}
+                          {item.name}
                         </b>
                         <span>{item.description}</span>
                         <span className="launchpad-chain">{item.chain}</span>
@@ -656,62 +592,7 @@ export default function RegistryActionModal({ address }: Props) {
                   );
                 })}
               </div>
-              {launchpads.includes("hookr") ? (
-                <p className="field-hint registry-group-hint">
-                  Hookr fixed rewards: 0.5% auto-burn · 3% LP rewards · 10%
-                  creator royalty · 20% protocol share.
-                </p>
-              ) : null}
             </fieldset>
-
-            {launchpads.includes("pons") ? (
-              <fieldset className="registry-group">
-                <legend>
-                  <span>📈 Pons stock pair</span>
-                  <span className="registry-count">{ponsStock.symbol}</span>
-                </legend>
-                <p className="field-hint registry-group-hint">
-                  Pons pairs the launch with the stock you pick. Buyers spend
-                  that stock, sellers get it back, and creator/vault rewards
-                  accrue in it. The canonical contract address is stored with
-                  the vault.
-                </p>
-                <div className="launchpad-picker">
-                  {PONS_STOCK_TOKENS.map((stock) => {
-                    const active = ponsStock.address === stock.address;
-                    return (
-                      <label
-                        key={stock.address}
-                        className={`launchpad-option${active ? " is-on" : ""}`}
-                      >
-                        <input
-                          type="radio"
-                          name="pons-stock"
-                          checked={active}
-                          onChange={() => setPonsStock(stock)}
-                        />
-                        <span className="chain-check" aria-hidden="true" />
-                        <img
-                          className="launchpad-logo"
-                          src={stock.logo}
-                          alt=""
-                          width={24}
-                          height={24}
-                          loading="lazy"
-                        />
-                        <span className="launchpad-copy">
-                          <b>{stock.symbol}</b>
-                          <span>{stock.name}</span>
-                          <span className="launchpad-chain">
-                            {shortAddress(stock.address)}
-                          </span>
-                        </span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ) : null}
 
             <fieldset className="registry-group">
               <legend>
@@ -816,10 +697,7 @@ export default function RegistryActionModal({ address }: Props) {
                 <input
                   type="checkbox"
                   checked={enableAgent}
-                  onChange={(event) => {
-                    setEnableAgent(event.target.checked);
-                    if (!event.target.checked) setAgentEco(false);
-                  }}
+                  onChange={(event) => setEnableAgent(event.target.checked)}
                 />
                 <span className="chain-check" aria-hidden="true" />
                 <span>
@@ -832,99 +710,88 @@ export default function RegistryActionModal({ address }: Props) {
               {enableAgent ? (
                 <div className="registry-agent-config">
                   <div className="field">
-                    <label htmlFor="registry-agent-model">Agent model</label>
-                    <select
-                      id="registry-agent-model"
+                    <label htmlFor="registry-agent-key">
+                      OpenRouter API key
+                    </label>
+                    <input
+                      id="registry-agent-key"
                       className="input"
-                      value={agentModel}
-                      onChange={(event) => setAgentModel(event.target.value)}
-                    >
-                      {MODEL_OPTIONS.map((option) => (
-                        <option key={option.id} value={option.id}>
-                          {modelOptionLabel(option)}
-                        </option>
-                      ))}
-                    </select>
+                      type="password"
+                      value={agentKey}
+                      placeholder="sk-or-v1-…"
+                      autoComplete="off"
+                      spellCheck={false}
+                      onChange={(event) => setAgentKey(event.target.value)}
+                    />
                     <p className="field-hint">
-                      OpenRouter access is provisioned by the Telos backend. The
-                      API key is never requested or stored in this form.
+                      Kept in this dialog only. Never written to the vault or
+                      localStorage.
                     </p>
                   </div>
-                  <label className="registry-toggle">
+                  <div className="field">
+                    <label htmlFor="registry-agent-model">
+                      Model preference
+                    </label>
                     <input
-                      type="checkbox"
-                      checked={agentEco}
-                      onChange={(event) => setAgentEco(event.target.checked)}
+                      id="registry-agent-model"
+                      className="input"
+                      type="text"
+                      value={agentModel}
+                      spellCheck={false}
+                      onChange={(event) => setAgentModel(event.target.value)}
                     />
-                    <span className="chain-check" aria-hidden="true" />
-                    <span>
-                      <b>🌱 Contribute to Telos Eco</b>
-                      <span>
-                        Opt in to weekly strategy discovery. Your idle agent
-                        shares the results so Telos can avoid duplicate model
-                        calls and save tokens.
-                      </span>
-                    </span>
-                  </label>
+                  </div>
                 </div>
               ) : null}
             </div>
 
-            <fieldset className="registry-group registry-strategy-summary">
-              <legend>
-                <span>🧬 Strategy</span>
-                <span className="registry-count">
-                  {strategySpec ? "ATTACHED" : "NOT ATTACHED"}
+            <div className="field">
+              <label htmlFor="registry-strategy">
+                🧬 Strategy contract
+                {strategySpec ? (
+                  <span className="registry-attached">
+                    ATTACHED FROM STRATEGY LAB
+                  </span>
+                ) : null}
+              </label>
+              <textarea
+                id="registry-strategy"
+                className="input strategy-input registry-strategy"
+                value={strategyValue}
+                rows={hasSolidity ? 12 : 4}
+                placeholder="Paste the IStrategy Solidity contract — or use ✦ Create Strategy to generate one."
+                spellCheck={false}
+                onChange={(event) => setStrategyValue(event.target.value)}
+                required
+              />
+              <div className="registry-strategy-meta">
+                <span>
+                  {hasSolidity
+                    ? `${contractName || "Contract"} · ${lineCount} lines`
+                    : strategyValue
+                      ? "TEXT ONLY · no Solidity source"
+                      : "NO CONTRACT ATTACHED"}
                 </span>
-              </legend>
-              {strategySpec ? (
-                <div className="registry-strategy-card">
-                  <div className="registry-strategy-head">
-                    <b>
-                      {strategySpec.name}{" "}
-                      <span className="registry-count">
-                        ${strategySpec.ticker}
-                      </span>
-                    </b>
-                    <span
-                      className={`registry-pill${
-                        attachedCode ? " is-pass" : " is-pending"
-                      }`}
-                    >
-                      {attachedCode ? "CONTRACT ✓" : "NO CONTRACT"}
-                    </span>
-                  </div>
-                  <div className="registry-strategy-tags">
-                    <span>{strategySpec.chain}</span>
-                    <span>{strategySpec.asset}</span>
-                    <span>{strategySpec.risk} RISK</span>
-                    <span>{strategySpec.fee}% FEE</span>
-                    {strategySpec.model ? (
-                      <span>{llmLabel(strategySpec.model)}</span>
-                    ) : null}
-                  </div>
-                  <p className="field-hint">
-                    {attachedCode
-                      ? `${attachedContractName || "Strategy"} · ${attachedLineCount} lines · IStrategy source attached.`
-                      : "Strategy metadata attached without a contract source."}{" "}
-                    The contract is created and reviewed in the strategy
-                    modal, not here.
-                  </p>
-                </div>
-              ) : (
-                <p className="field-hint">
-                  No strategy attached. Use <b>✦ Create Strategy</b> to generate
-                  and review the contract in its own modal, then create the vault
-                  from there.
-                  {strategy ? (
-                    <>
-                      {" "}
-                      Launch panel strategy type: <b>{strategy}</b>.
-                    </>
-                  ) : null}
-                </p>
-              )}
-            </fieldset>
+                {strategyValidation ? (
+                  <span
+                    className={
+                      strategyValidation.ok ? "registry-pass" : "registry-fail"
+                    }
+                  >
+                    {strategyValidation.ok
+                      ? "VALIDATOR ✓"
+                      : `VALIDATOR ✗ ${strategyValidation.issues.length}`}
+                  </span>
+                ) : null}
+              </div>
+              {strategyValidation && !strategyValidation.ok ? (
+                <ul className="registry-issues">
+                  {strategyValidation.issues.slice(0, 4).map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           </div>
 
           {error ? (

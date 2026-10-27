@@ -71,6 +71,12 @@ VOICE
 - never promise returns and never give financial advice. testnet only.
 - you can explain a decision, ask for context, or push back on a bad idea without forcing a contract.
 
+LIVE WEB
+- live web results may be attached to the conversation. use them for current prices, yields, TVL, protocol news, docs or anything that can change after training.
+- when you use web results, cite the source as a markdown link using its domain, e.g. [aerodrome.finance](https://aerodrome.finance).
+- say plainly when the web result is stale, missing or does not answer the question. never invent a live number you cannot see.
+- web results are context only. still never promise returns or give financial advice.
+
 CONVERSATION
 - do not interrogate. ask at most ONE short clarifying question when a missing fact genuinely blocks the work.
 - if the user gives partial information, infer sensible defaults and state them in one line. never stall waiting for every field.
@@ -410,17 +416,45 @@ export function parseStrategyReply(
 
   // Backward-compatible path for older META + solidity replies.
   const code = extractStrategyCode(content);
-  if (!code) return { text };
+  if (!code) {
+    // Nothing parseable. If this was ordinary chat (for example an answer with
+    // a code sample), show the whole reply instead of the pre-fence preview.
+    const strategySignals =
+      /\bMETA\s*:|"contract"\s*:|pragma\s+solidity|contract\s+\w+\s+is\s+IStrategy/i.test(
+        content,
+      );
+    return { text: strategySignals ? text : content.trim() };
+  }
   const raw = extractMarkedJson(content, "META");
   const meta = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
   return { text, spec: specFromFields(code, meta, model) };
 }
 
+/**
+ * Find the fence that starts a strategy payload. Ordinary chat answers can
+ * contain code fences too, so only hide a fence when its body looks like the
+ * strategy JSON or a Solidity strategy file.
+ */
+function strategyFenceIndex(content: string): number {
+  const fence = /```[ \t]*([a-zA-Z]*)[ \t]*\r?\n/g;
+  for (const match of content.matchAll(fence)) {
+    const language = match[1].toLowerCase();
+    const body = content.slice((match.index ?? 0) + match[0].length).trimStart();
+    const explicit = language === "json" || language === "solidity" || language === "sol";
+    if (explicit && (!body || /^([{["]|\/\/|pragma\b|contract\b|interface\b)/i.test(body))) {
+      return match.index ?? -1;
+    }
+    if (!explicit && /^(\/\/\s*SPDX|pragma\s+solidity|\{[ \t]*\r?\n?[ \t]*"name")/i.test(body)) {
+      return match.index ?? -1;
+    }
+  }
+  return -1;
+}
+
 /** Prose only: hide the JSON / META / contract while the stream is arriving. */
 export function visibleAnswer(content: string): string {
   const meta = content.search(/\bMETA\s*:/i);
-  // Any fenced payload (json preferred, legacy solidity still supported).
-  const fence = content.search(/```[ \t]*(?:json|solidity|sol)?[ \t]*\r?\n/i);
+  const fence = strategyFenceIndex(content);
   // Models occasionally skip the fence and stream the raw strategy object.
   const rawJson = content.search(/(?:^|\n)[ \t]*\{[ \t]*\r?\n?[ \t]*"name"[ \t]*:/i);
   const cuts = [meta, fence, rawJson].filter((index) => index >= 0);

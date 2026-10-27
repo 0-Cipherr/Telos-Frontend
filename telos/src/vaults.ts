@@ -9,6 +9,19 @@ export type VaultAllocation = {
   pct: number;
 };
 
+/** A token created by a launchpad, and the asset it trades against. */
+export type VaultLaunchpadToken = {
+  launchpad: "pons" | "hookr";
+  symbol: string;
+  name: string;
+  address?: string;
+  logo?: string;
+  /** Quote/stock symbol the token is paired with (AAPL, WETH, …). */
+  pairedWith?: string;
+  /** Contract address of the paired asset, when known. */
+  pairAddress?: string;
+};
+
 export type Vault = {
   /** Stable registry identifier, also used in URLs. */
   id: string;
@@ -52,13 +65,10 @@ export type Vault = {
     address: string;
     logo: string;
   };
-  /** Token created by a Hookr.fun launch. */
-  launchpadToken?: {
-    symbol: string;
-    name: string;
-    address?: string;
-    logo?: string;
-  };
+  /** Token created by a launchpad launch. */
+  launchpadToken?: VaultLaunchpadToken;
+  /** Every token a vault launched, when it lists more than one launchpad. */
+  launchpadTokens?: VaultLaunchpadToken[];
   /** Where the creator's share of yield is routed. */
   creatorRewards?: CreatorRewardMode;
   /** Whether vault shares can be staked from the vault page. */
@@ -78,7 +88,7 @@ export type Vault = {
   strategyModel?: string;
 };
 
-/** Asset shown for a launchpad vault: a pons stock pair or Hookr token. */
+/** Asset shown for a launchpad vault: a launched token or a stock pair. */
 export type VaultLaunchpadAsset = {
   launchpad: "pons" | "hookr";
   kind: "stock" | "token";
@@ -86,6 +96,10 @@ export type VaultLaunchpadAsset = {
   name: string;
   address?: string;
   logo?: string;
+  /** Quote/stock symbol the token is paired with. */
+  pairedWith?: string;
+  /** Contract address of the paired asset, when known. */
+  pairAddress?: string;
 };
 
 export type VaultFilterKind = "all" | VaultKind;
@@ -612,6 +626,14 @@ export const VAULTS: Vault[] = [
       address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
       logo: "https://cdn.robinhood.com/ncw_assets/logos/0xaf3d76f1834a1d425780943c99ea8a608f8a93f9.png",
     },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "AAPLX",
+      name: "AAPL Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "AAPL",
+      pairAddress: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+    },
     createdAt: "2026-10-20",
   },
   {
@@ -639,11 +661,214 @@ export const VAULTS: Vault[] = [
     status: "live",
     launchpads: ["hookr"],
     launchpadToken: {
+      launchpad: "hookr",
       symbol: "PLUNDER",
       name: "Plunder",
       logo: "/launchpads/hookr.png",
+      pairedWith: "WETH",
+      pairAddress: "0x0Bd7D308f8E1639FAb988df18A8011f41EAcAD73",
     },
     createdAt: "2026-10-22",
+  },
+  {
+    id: "TL-016",
+    name: "NVDA Stock Curve",
+    asset: "NVDA",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons curve paired with tokenized NVDA. Buyers spend NVDA, sellers are paid in NVDA, and creator fees accrue in NVDA.",
+    description:
+      "Pons launch paired with NVIDIA stock tokens. The pairing asset is also the payout asset, so deed cash flow arrives in NVDA. Sample data.",
+    allocations: [{ label: "NVDA / launch token curve", pct: 100 }],
+    risk: "HIGH",
+    apy: 24.6,
+    tvl: "310K",
+    tvlUsd: 310_000,
+    fee: 8,
+    creator: "0x2b91…4d7e",
+    color: "#8fd400",
+    h: [9, 10, 10, 11, 12, 13, 13, 14, 15, 16],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "NVDA",
+      name: "NVIDIA",
+      address: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0xd0601ce157db5bdc3162bbac2a2c8af5320d9eec.png",
+    },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "NVDAC",
+      name: "NVDA Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "NVDA",
+      pairAddress: "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+    },
+    createdAt: "2026-10-21",
+  },
+  {
+    id: "TL-017",
+    name: "TSLA Stock Curve",
+    asset: "TSLA",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons curve paired with tokenized TSLA. Fees and rewards settle in TSLA rather than ETH.",
+    description:
+      "Pons launch paired with Tesla stock tokens. The curve graduates into a Uniswap v4 pool quoted in TSLA. Sample data.",
+    allocations: [{ label: "TSLA / launch token curve", pct: 100 }],
+    risk: "HIGH",
+    apy: 21.3,
+    tvl: "260K",
+    tvlUsd: 260_000,
+    fee: 8,
+    creator: "0x84c0…91b3",
+    color: "#8fd400",
+    h: [8, 9, 9, 10, 10, 12, 12, 13, 13, 14],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "TSLA",
+      name: "Tesla",
+      address: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0x322f0929c4625ed5bad873c95208d54e1c003b2d.png",
+    },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "TSLAC",
+      name: "TSLA Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "TSLA",
+      pairAddress: "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+    },
+    createdAt: "2026-10-19",
+  },
+  {
+    id: "TL-018",
+    name: "SPY Index Curve",
+    asset: "SPY",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet", "Base"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons curve paired with tokenized SPY. Broad-market exposure prices the launch and pays its creator fees.",
+    description:
+      "Pons launch paired with the SPDR S&P 500 ETF token. Lower volatility pairing, so the fee stream is steadier than single-name stock pairs. Sample data.",
+    allocations: [{ label: "SPY / launch token curve", pct: 100 }],
+    risk: "MEDIUM",
+    apy: 12.8,
+    tvl: "540K",
+    tvlUsd: 540_000,
+    fee: 7,
+    creator: "0x1f73…c580",
+    color: "#8fd400",
+    h: [5, 6, 6, 6, 7, 7, 8, 8, 8, 9],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "SPY",
+      name: "SPDR S&P 500 ETF Trust",
+      address: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0x117cc2133c37b721f49de2a7a74833232b3b4c0c.png",
+    },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "SPYC",
+      name: "SPY Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "SPY",
+      pairAddress: "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+    },
+    createdAt: "2026-10-17",
+  },
+  {
+    id: "TL-019",
+    name: "MSFT Stock Curve",
+    asset: "MSFT",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons curve paired with tokenized MSFT. Creator fees are credited in MSFT in the pons fee escrow.",
+    description:
+      "Pons launch paired with Microsoft stock tokens. Small book, high fee share, rewards paid in MSFT. Sample data.",
+    allocations: [{ label: "MSFT / launch token curve", pct: 100 }],
+    risk: "MEDIUM",
+    apy: 16.2,
+    tvl: "190K",
+    tvlUsd: 190_000,
+    fee: 8,
+    creator: "0x6ad2…0f44",
+    color: "#8fd400",
+    h: [6, 7, 7, 8, 8, 9, 9, 10, 10, 11],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "MSFT",
+      name: "Microsoft",
+      address: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0xe93237c50d904957cf27e7b1133b510c669c2e74.png",
+    },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "MSFTC",
+      name: "MSFT Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "MSFT",
+      pairAddress: "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+    },
+    createdAt: "2026-10-16",
+  },
+  {
+    id: "TL-020",
+    name: "QQQ Index Curve",
+    asset: "QQQ",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet", "Base"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons curve paired with tokenized QQQ. Tech-index exposure as the quote asset, with fees paid in QQQ.",
+    description:
+      "Pons launch paired with the Invesco QQQ ETF token. Index pairing keeps the curve liquid while fees accumulate in QQQ. Sample data.",
+    allocations: [{ label: "QQQ / launch token curve", pct: 100 }],
+    risk: "MEDIUM",
+    apy: 14.9,
+    tvl: "380K",
+    tvlUsd: 380_000,
+    fee: 7,
+    creator: "0x9c35…7a10",
+    color: "#8fd400",
+    h: [6, 6, 7, 7, 8, 8, 9, 9, 10, 10],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "QQQ",
+      name: "Invesco QQQ",
+      address: "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0xd5f3879160bc7c32ebb4dc785f8a4f505888de68.png",
+    },
+    launchpadToken: {
+      launchpad: "pons",
+      symbol: "QQQC",
+      name: "QQQ Curve",
+      logo: "/launchpads/pons.png",
+      pairedWith: "QQQ",
+      pairAddress: "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+    },
+    createdAt: "2026-10-15",
   },
 ];
 
@@ -706,20 +931,37 @@ export function median(values: number[]): number {
 /** Launchpad assets attached to a vault, in display order. */
 export function vaultLaunchpadPairs(vault: Vault): VaultLaunchpadAsset[] {
   const pairs: VaultLaunchpadAsset[] = [];
+  const tokens = vault.launchpadTokens?.length
+    ? vault.launchpadTokens
+    : vault.launchpadToken
+      ? [vault.launchpadToken]
+      : [];
+  const hasPonsToken = tokens.some((token) => token.launchpad === "pons");
 
-  if (vault.launchpadStock) {
+  for (const token of tokens) {
+    const launchpad = token.launchpad ?? "hookr";
+    pairs.push({
+      ...token,
+      launchpad,
+      kind: "token",
+      pairedWith:
+        token.pairedWith ??
+        (launchpad === "pons" ? vault.launchpadStock?.symbol : "WETH"),
+      pairAddress:
+        token.pairAddress ??
+        (launchpad === "pons" ? vault.launchpadStock?.address : undefined),
+    });
+  }
+
+  // A stock-only entry (older vaults or a pons listing without token data)
+  // still needs to surface the stock it pairs with.
+  if (vault.launchpadStock && !hasPonsToken) {
     pairs.push({
       launchpad: "pons",
       kind: "stock",
       ...vault.launchpadStock,
-    });
-  }
-
-  if (vault.launchpadToken) {
-    pairs.push({
-      launchpad: "hookr",
-      kind: "token",
-      ...vault.launchpadToken,
+      pairedWith: vault.launchpadStock.symbol,
+      pairAddress: vault.launchpadStock.address,
     });
   }
 

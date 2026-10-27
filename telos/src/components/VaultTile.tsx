@@ -23,7 +23,13 @@ export default function VaultTile({ vault, own = false }: Props) {
   const weekly = weeklyEarnings(vault.apy);
   const hasApy = vault.apy > 0;
   const pairLabel = vaultLaunchpadPairs(vault)
-    .map((pair) => `${pair.kind === "stock" ? "STOCK" : "TOKEN"} ${pair.symbol}`)
+    .map((pair) => {
+      const launchpad = pair.launchpad === "pons" ? "PONS" : "HOOKR";
+      if (pair.kind === "stock") return `${launchpad} STOCK ${pair.symbol}`;
+      return `${launchpad} ${pair.symbol}${
+        pair.pairedWith ? ` / ${pair.pairedWith}` : ""
+      }`;
+    })
     .join(" · ");
 
   return (

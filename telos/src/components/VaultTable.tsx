@@ -122,42 +122,54 @@ function VaultRow({
         </span>
         {launchpadPairs.length ? (
           <span className="vault-pairs">
-            {launchpadPairs.map((pair) => (
-              <span
-                className={`vault-pair vault-pair--${pair.launchpad}`}
-                key={`${pair.launchpad}-${pair.symbol}`}
-                aria-label={`${
-                  pair.launchpad === "pons"
-                    ? "Pons stock pair"
-                    : "Hookr token"
-                }: ${pair.name} (${pair.symbol})`}
-                title={`${
-                  pair.launchpad === "pons"
-                    ? "Pons stock pair"
-                    : "Hookr token"
-                } · ${pair.name} (${pair.symbol})${
-                  pair.address ? ` · ${pair.address}` : ""
-                }`}
-              >
-                {pair.logo ? (
-                  <img
-                    src={pair.logo}
-                    alt=""
-                    width={12}
-                    height={12}
-                    loading="lazy"
-                  />
-                ) : (
-                  <span aria-hidden="true">
-                    {pair.kind === "stock" ? "📈" : "🪝"}
+            {launchpadPairs.map((pair) => {
+              const launchpadLabel =
+                pair.launchpad === "pons" ? "PONS" : "HOOKR";
+              const pairLabel =
+                pair.kind === "stock"
+                  ? "stock pair"
+                  : pair.pairedWith
+                    ? `paired with ${pair.pairedWith}`
+                    : "launch token";
+
+              return (
+                <span
+                  className={`vault-pair vault-pair--${pair.launchpad}`}
+                  key={`${pair.launchpad}-${pair.kind}-${pair.symbol}`}
+                  aria-label={`${launchpadLabel} ${
+                    pair.kind === "stock" ? "stock pair" : "token"
+                  } ${pair.name} (${pair.symbol})${
+                    pair.pairedWith ? `, paired with ${pair.pairedWith}` : ""
+                  }`}
+                  title={`${launchpadLabel} · ${pair.name} (${pair.symbol})${
+                    pair.pairedWith ? ` · paired with ${pair.pairedWith}` : ""
+                  }${pair.address ? ` · ${pair.address}` : ""}`}
+                >
+                  {pair.logo ? (
+                    <img
+                      src={pair.logo}
+                      alt=""
+                      width={14}
+                      height={14}
+                      loading="lazy"
+                    />
+                  ) : (
+                    <span aria-hidden="true">
+                      {pair.kind === "stock" ? "📈" : "🪝"}
+                    </span>
+                  )}
+                  <span className="vault-pair-copy">
+                    <span className="vault-pair-token">
+                      <span className="vault-pair-launchpad">
+                        {launchpadLabel}
+                      </span>{" "}
+                      {pair.symbol}
+                    </span>
+                    <span className="vault-pair-with">{pairLabel}</span>
                   </span>
-                )}
-                <span className="vault-pair-kind">
-                  {pair.kind === "stock" ? "STOCK" : "TOKEN"}
                 </span>
-                <span>{pair.symbol}</span>
-              </span>
-            ))}
+              );
+            })}
           </span>
         ) : null}
       </td>
@@ -250,6 +262,8 @@ export default function VaultTable({
       pair.symbol,
       pair.name,
       pair.address ?? "",
+      pair.pairedWith ?? "",
+      pair.pairAddress ?? "",
     ]);
     return [
       vault.id,

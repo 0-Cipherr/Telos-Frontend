@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
 import { CHAIN_ALIAS_PATTERN, normalizeChain } from "../chains";
 import { lockBodyScroll } from "../utils/scrollLock";
 import { buildLocalContract } from "../strategies/local-contract";
@@ -28,12 +34,18 @@ export type { StrategySpec } from "../strategies/strategy-standard";
 
 type Role = "bot" | "user" | "sys";
 
+type Source = {
+  title: string;
+  url: string;
+};
+
 type Message = {
   id: number;
   role: Role;
   text: string;
   chips?: string[];
   card?: StrategySpec;
+  sources?: Source[];
 };
 
 type Draft = {
@@ -53,6 +65,7 @@ type StrategyChatModalProps = {
 
 const KEY_STORAGE = "telos.llm.key";
 const MODEL_STORAGE = "telos.llm.model";
+const WEB_STORAGE = "telos.llm.web";
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 // Dev/preview server proxy (see vite.config.ts). Keeps the API key server-side
 // so the lab is usable without any login/paste-a-key step.
@@ -61,8 +74,11 @@ const DIRECT_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Free OpenRouter models queue before the first token, so be patient. The
 // strongest free coder model takes ~40s for a full contract. The modal still
 // shows a "computing" indicator while it waits.
-const FIRST_TOKEN_TIMEOUT_MS = 60_000;
-const HARD_TIMEOUT_MS = 240_000;
+const FIRST_TOKEN_TIMEOUT_MS = 90_000;
+const HARD_TIMEOUT_MS = 300_000;
+// Once tokens are flowing, a long silence almost always means the upstream
+// stream died. Abort instead of leaving the bubble stuck on "drafting…".
+const STREAM_IDLE_TIMEOUT_MS = 60_000;
 const MAX_REPAIRS = 2;
 // Free models sometimes echo the request instead of compiling. One strict
 // nudge is usually enough to get back on format.
@@ -70,12 +86,13 @@ const NO_CONTRACT_PROMPT = `The user asked you to compile a strategy, but your l
 const AUDIT_TIMEOUT_MS = 200_000;
 
 const WELCOME =
-  "hey — i'm strategist, your telos strategy copilot. we can just talk through an idea, compare venues, or compile a real IStrategy contract when you're ready. nothing gets registered until it passes verification in the strategy modal.";
+  "hey — i'm strategist, your telos strategy copilot. we can talk through an idea, compare venues, look up current protocol data on the web, or compile a real IStrategy contract when you're ready. nothing gets registered until it passes verification in the strategy modal.";
 
 const WELCOME_CHIPS = [
   "USDC lending on Base, low risk",
   "Delta-neutral USDC on Arbitrum",
   "Explain funding carry vs lending",
+  "What's the current ETH price?",
   "🎲 surprise me",
 ];
 
@@ -334,6 +351,77 @@ const RANDOM_DRAFTS: Draft[] = [
 // The model streams prose first, then the strategy JSON object. Showing the
 // JSON/code as it arrives looks broken, so only prose is rendered live.
 
+function formatCount(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+}
+
+// The web plugin runs one search per request, so only pay for it when the
+// question is about something that can change (or the user explicitly asks).
+const WEB_SEARCH_HINTS =
+  /\b(search|google|look\s*up|browse|internet|web|price|prices|apy|apr|tvl|market\s*cap|funding\s*rate|gas\s*fees?|news|today|tonight|current(?:ly)?|latest|live|recent(?:ly)?|this\s+(?:week|month|year)|last\s+(?:night|week|month)|who\s+won|right\s+now|as\s+of|yield|yields|market)\b/i;
+
+function needsWebSearch(text: string): boolean {
+  return WEB_SEARCH_HINTS.test(text);
+}
+
+/** Providers sometimes stream content as parts instead of a plain string. */
+function streamText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (!Array.isArray(value)) return "";
+  return value
+    .map((part) => {
+      if (typeof part === "string") return part;
+      const text = (part as { text?: unknown } | null)?.text;
+      return typeof text === "string" ? text : "";
+    })
+    .join("");
+}
+
+function readSources(value: unknown): Source[] {
+  if (!Array.isArray(value)) return [];
+  const found: Source[] = [];
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const citation = (item as { url_citation?: { url?: unknown; title?: unknown } })
+      .url_citation;
+    if (!citation || typeof citation.url !== "string") continue;
+    found.push({
+      url: citation.url,
+      title:
+        typeof citation.title === "string" && citation.title.trim()
+          ? citation.title.trim()
+          : citation.url,
+    });
+  }
+  return found;
+}
+
+/** Minimal markdown: bold + http(s) links, so citations are clickable. */
+function renderRichText(text: string): ReactNode {
+  const pattern = /(\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)|\*\*([^*\n]+)\*\*)/g;
+  const nodes: ReactNode[] = [];
+  let last = 0;
+  let key = 0;
+  for (const match of text.matchAll(pattern)) {
+    if (match.index !== undefined && match.index > last) {
+      nodes.push(text.slice(last, match.index));
+    }
+    if (match[2] && match[3]) {
+      nodes.push(
+        <a key={`link-${key}`} href={match[3]} target="_blank" rel="noreferrer">
+          {match[2]}
+        </a>,
+      );
+    } else if (match[4]) {
+      nodes.push(<strong key={`bold-${key}`}>{match[4]}</strong>);
+    }
+    key += 1;
+    last = (match.index ?? 0) + match[0].length;
+  }
+  if (last < text.length) nodes.push(text.slice(last));
+  return nodes;
+}
+
 function describeHttpError(status: number, detail: string): string {
   let extra = detail;
   try {
@@ -378,6 +466,9 @@ export default function StrategyChatModal({
   const [apiKey, setApiKey] = useState(() => readStorage(KEY_STORAGE, ""));
   const [keyDraft, setKeyDraft] = useState(() => readStorage(KEY_STORAGE, ""));
   const [model, setModel] = useState(() => readStorage(MODEL_STORAGE, DEFAULT_MODEL));
+  const [webSearch, setWebSearch] = useState(
+    () => readStorage(WEB_STORAGE, "1") !== "0",
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [server, setServer] = useState<{
     checked: boolean;
@@ -388,6 +479,8 @@ export default function StrategyChatModal({
   const [copied, setCopied] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [thinkingTokens, setThinkingTokens] = useState(0);
+  const [draftingChars, setDraftingChars] = useState(0);
+  const [webActive, setWebActive] = useState(false);
   const [auditing, setAuditing] = useState(false);
 
   const draftRef = useRef<Draft>({});
@@ -406,10 +499,10 @@ export default function StrategyChatModal({
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   const llmReady = apiKey.trim().length > 8;
-  // Prefer the user's own key when present. Otherwise use the keyless server
-  // proxy (vite.config.ts), including before its health check resolves so the
-  // first message doesn't get pushed onto the slower local fallback.
-  const useProxy = !llmReady && (server.ready || !server.checked);
+  // Prefer the user's own key when present. Otherwise always try the keyless
+  // server proxy (vite.config.ts). A slow or failed health check should not
+  // strand the chat on the deterministic local fallback.
+  const useProxy = !llmReady;
   const activeModel = llmReady
     ? model.replace(/^.*\//, "")
     : (server.model ?? "local-engine").replace(/^.*\//, "");
@@ -427,8 +520,8 @@ export default function StrategyChatModal({
     if (!open) return;
     let cancelled = false;
     const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 1500);
-    fetch(PROXY_URL, { signal: controller.signal })
+    const timer = window.setTimeout(() => controller.abort(), 3000);
+    fetch(PROXY_URL, { signal: controller.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) return null;
         return (await response.json()) as { ok?: boolean; model?: string };
@@ -462,8 +555,12 @@ export default function StrategyChatModal({
     );
   };
 
-  const pushBot = (text: string, chips?: string[], card?: StrategySpec) =>
-    pushMessage({ role: "bot", text, chips, card });
+  const pushBot = (
+    text: string,
+    chips?: string[],
+    card?: StrategySpec,
+    sources?: Source[],
+  ) => pushMessage({ role: "bot", text, chips, card, sources });
 
   useEffect(() => {
     return () => {
@@ -485,8 +582,16 @@ export default function StrategyChatModal({
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 60);
     return () => {
       window.clearTimeout(focusTimer);
-      // Closing the lab cancels an in-flight audit instead of spending credits
-      // in the background.
+      // Closing the lab cancels an in-flight chat or audit instead of spending
+      // credits in the background.
+      requestRef.current += 1;
+      abortRef.current?.abort();
+      abortRef.current = null;
+      setTyping(false);
+      setStreaming(false);
+      setThinkingTokens(0);
+      setDraftingChars(0);
+      setWebActive(false);
       auditAbortRef.current?.abort();
       auditAbortRef.current = null;
       auditSeqRef.current += 1;
@@ -715,6 +820,7 @@ export default function StrategyChatModal({
     setTyping(true);
     setStreaming(false);
     setThinkingTokens(0);
+    setDraftingChars(0);
 
     let streamedId = -1;
     let answer = "";
@@ -722,8 +828,17 @@ export default function StrategyChatModal({
     let reasoningChars = 0;
     let shownThinking = 0;
     let repairPrompt = "";
+    let lastActivity = Date.now();
+    const sources: Source[] = [];
     const compileIntent = isRepair || wantsCompileRequest(text);
     const stale = () => requestRef.current !== requestId;
+    // Web results are optional and cost extra per request, so the call only
+    // asks for them when the toggle is on and the prompt needs fresh facts.
+    const webPlugins =
+      webSearch && !isRepair && needsWebSearch(text)
+        ? [{ id: "web", max_results: 5 }]
+        : [];
+    setWebActive(webPlugins.length > 0);
 
     // Without a first-token timeout the modal sits on "COMPUTING…" forever if
     // OpenRouter queues. The hard timeout also catches a stalled stream.
@@ -736,6 +851,12 @@ export default function StrategyChatModal({
       abortReasonRef.current = "timeout";
       controller.abort();
     }, HARD_TIMEOUT_MS);
+    const idleTimeout = window.setInterval(() => {
+      if (!sawFirstToken) return;
+      if (Date.now() - lastActivity < STREAM_IDLE_TIMEOUT_MS) return;
+      abortReasonRef.current = "timeout";
+      controller.abort();
+    }, 5_000);
 
     try {
       const direct = llmReady;
@@ -767,6 +888,7 @@ export default function StrategyChatModal({
           stream: true,
           // Skip the hidden reasoning phase (~6s on the default free model).
           reasoning: { enabled: false },
+          ...(webPlugins.length > 0 ? { plugins: webPlugins } : {}),
         }),
       });
 
@@ -787,6 +909,11 @@ export default function StrategyChatModal({
       // the request. Direct BYOK calls fall back to the requested model.
       const servedModel =
         response.headers.get("x-telos-model") || requestModel;
+      // The health check may have lost a race with the dev server starting up;
+      // a real reply is proof the proxy is live.
+      if (!direct && (!server.ready || server.model !== servedModel)) {
+        setServer({ checked: true, ready: true, model: servedModel });
+      }
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -799,6 +926,7 @@ export default function StrategyChatModal({
           void reader.cancel();
           return;
         }
+        lastActivity = Date.now();
         pending += decoder.decode(value, { stream: true });
         const lines = pending.split("\n");
         pending = lines.pop() ?? "";
@@ -811,7 +939,15 @@ export default function StrategyChatModal({
 
           let chunk: {
             error?: { message?: string };
-            choices?: { delta?: { content?: string; reasoning?: string } }[];
+            annotations?: unknown;
+            choices?: {
+              delta?: {
+                content?: unknown;
+                reasoning?: unknown;
+                annotations?: unknown;
+              };
+              message?: { annotations?: unknown };
+            }[];
           };
           try {
             chunk = JSON.parse(payload);
@@ -819,6 +955,17 @@ export default function StrategyChatModal({
             continue; // partial frame — the rest arrives on the next read
           }
           if (chunk.error) throw new Error(chunk.error.message ?? "provider error");
+
+          // OpenRouter attaches web citations to the delta (streaming) or the
+          // final message. Keep a de-duplicated list for the source chips.
+          const incoming = [
+            ...readSources(chunk.choices?.[0]?.delta?.annotations),
+            ...readSources(chunk.choices?.[0]?.message?.annotations),
+            ...readSources(chunk.annotations),
+          ];
+          for (const source of incoming) {
+            if (!sources.some((entry) => entry.url === source.url)) sources.push(source);
+          }
 
           // Some providers ignore the reasoning flag. Surface their thinking as
           // a live token counter instead of six seconds of silent dots.
@@ -832,8 +979,8 @@ export default function StrategyChatModal({
             }
           }
 
-          const delta = chunk.choices?.[0]?.delta?.content;
-          if (typeof delta !== "string" || !delta) continue;
+          const delta = streamText(chunk.choices?.[0]?.delta?.content);
+          if (!delta) continue;
 
           answer += delta;
           if (!sawFirstToken) {
@@ -842,12 +989,15 @@ export default function StrategyChatModal({
             setTyping(false); // dots off: real text is landing now
             setStreaming(true);
           }
+          setDraftingChars(answer.length);
 
           const visible = visibleAnswer(answer);
           // Always update: when the model jumps straight into JSON the visible
-          // prose is empty after the first character, and skipping empty
-          // updates used to leave a stray character on screen until the stream ended.
-          const shown = visible || "drafting contract…";
+          // prose is empty after the first character. Show a moving character
+          // count so a long contract does not look frozen.
+          const shown =
+            visible ||
+            `drafting contract… ${formatCount(answer.length)} chars`;
           if (streamedId < 0) {
             streamedId = pushBot(shown).id;
           } else {
@@ -862,11 +1012,16 @@ export default function StrategyChatModal({
       const parsed = parseStrategyReply(answer, servedModel);
       const finalText =
         parsed.text || (parsed.spec ? "contract compiled." : "reply complete.");
+      const sourceList = sources.length > 0 ? sources : undefined;
       let cardMessageId = streamedId;
       if (streamedId >= 0) {
-        updateMessage(streamedId, { text: finalText, card: parsed.spec });
+        updateMessage(streamedId, {
+          text: finalText,
+          card: parsed.spec,
+          sources: sourceList,
+        });
       } else {
-        cardMessageId = pushBot(finalText, undefined, parsed.spec).id;
+        cardMessageId = pushBot(finalText, undefined, parsed.spec, sourceList).id;
       }
 
       historyRef.current.push({ role: "assistant", content: answer.slice(0, 12000) });
@@ -925,6 +1080,17 @@ export default function StrategyChatModal({
       const reason = live ? abortReasonRef.current : "superseded";
       if (reason === "superseded") return;
 
+      // Never leave a "drafting contract…" placeholder behind after a stop or
+      // a timeout. Swap it for whatever prose actually arrived.
+      if (streamedId >= 0) {
+        const partial = visibleAnswer(answer);
+        updateMessage(streamedId, {
+          text: partial
+            ? `${partial}\n\n— reply stopped before it finished.`
+            : "reply stopped before any text arrived.",
+        });
+      }
+
       if (reason === "user") {
         pushMessage({ role: "sys", text: "stopped. ask again when you're ready." });
       } else {
@@ -955,10 +1121,15 @@ export default function StrategyChatModal({
     } finally {
       window.clearTimeout(firstTokenTimeout);
       window.clearTimeout(hardTimeout);
-      if (abortRef.current === controller) abortRef.current = null;
-      setTyping(false);
-      setStreaming(false);
-      setThinkingTokens(0);
+      window.clearInterval(idleTimeout);
+      if (!stale()) {
+        if (abortRef.current === controller) abortRef.current = null;
+        setTyping(false);
+        setStreaming(false);
+        setThinkingTokens(0);
+        setDraftingChars(0);
+        setWebActive(false);
+      }
       if (repairPrompt && !stale()) {
         historyRef.current.push({ role: "user", content: repairPrompt });
         const prompt = repairPrompt;
@@ -1123,17 +1294,17 @@ export default function StrategyChatModal({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="y2k-titlebar">
-          <span className="y2k-brandmark" aria-hidden="true">
-            ♪
+          <span className="y2k-traffic" aria-hidden="true">
+            <i />
+            <i />
+            <i />
           </span>
           <span className="y2k-title" id="y2k-title">
-            TELOS.FM
+            strategy-studio
           </span>
-          <span className="y2k-title-sub">STRATEGY STUDIO</span>
-          <span className="y2k-title-meta">2008 EDITION / {engineLabel}</span>
+          <span className="y2k-title-sub">— Telos</span>
+          <span className="y2k-title-meta">VS CODE DARK / {engineLabel}</span>
           <div className="y2k-winbtns">
-            <span aria-hidden="true">_</span>
-            <span aria-hidden="true">□</span>
             <button type="button" onClick={onClose} aria-label="Close strategy lab">
               ×
             </button>
@@ -1144,21 +1315,20 @@ export default function StrategyChatModal({
           <aside className="y2k-rail" aria-label="Strategy lab controls">
             <div className="y2k-rail-brand">
               <span className="y2k-rail-logo" aria-hidden="true">
-                T
+                {"{}"}
               </span>
               <span>
-                <b>TELOS.FM</b>
-                <span>STRATEGY STUDIO</span>
+                <b>TELOS STUDIO</b>
+                <span>STRATEGY EXPLORER</span>
               </span>
             </div>
 
             <div className="y2k-agent">
               <div className="y2k-agent-face" aria-hidden="true">
-                <span>◕</span>
-                <span>◕</span>
+                TS
               </div>
               <div>
-                <b>STRATEGIST</b>
+                <b>TELOS STRATEGIST</b>
                 <span className="y2k-agent-status">
                   <i className="y2k-led" aria-hidden="true" />
                   {llmReady ? "BYOK LINKED" : server.ready ? "TELOS LINKED" : "LOCAL SIM"}
@@ -1167,28 +1337,22 @@ export default function StrategyChatModal({
             </div>
 
             <div className="y2k-rail-block">
-              <span className="y2k-label">NOW PLAYING</span>
+              <span className="y2k-label">ACTIVE SESSION</span>
               <div className="y2k-nowplaying">
                 <span className="y2k-nowplaying-art" aria-hidden="true">
-                  ✦
+                  TS
                 </span>
                 <div>
-                  <b>Strategy session</b>
+                  <b>strategy.chat</b>
                   <span>{typing || streaming || auditing ? "live compile" : "ready to chat"}</span>
                 </div>
-                <span className="y2k-eq" aria-hidden="true">
-                  <i />
-                  <i />
-                  <i />
-                  <i />
-                </span>
               </div>
             </div>
 
             <div className="y2k-rail-block">
-              <span className="y2k-label">SESSION</span>
+              <span className="y2k-label">WORKSPACE</span>
               <button type="button" className="btn btn-sm y2k-block" onClick={resetChat}>
-                ↻ NEW CHAT
+                + New session
               </button>
               <dl className="y2k-stats">
                 <div>
@@ -1209,7 +1373,7 @@ export default function StrategyChatModal({
                 aria-expanded={settingsOpen}
                 onClick={() => setSettingsOpen((current) => !current)}
               >
-                ⚙ MODEL / API KEY {settingsOpen ? "▴" : "▾"}
+                ⚙ Model &amp; API key {settingsOpen ? "▴" : "▾"}
               </button>
               {settingsOpen ? (
                 <div className="y2k-settings-body">
@@ -1237,8 +1401,12 @@ export default function StrategyChatModal({
                     spellCheck={false}
                     onChange={(event) => setModel(event.target.value)}
                   />
-                  <button type="button" className="btn btn-sm y2k-block" onClick={linkKey}>
-                    {llmReady ? "↻ UPDATE KEY" : "⚡ USE OWN KEY"}
+                  <button
+                    type="button"
+                    className="btn btn-sm y2k-block y2k-btn-primary"
+                    onClick={linkKey}
+                  >
+                    {llmReady ? "Update key" : "Use own key"}
                   </button>
                   {llmReady ? (
                     <button
@@ -1251,7 +1419,7 @@ export default function StrategyChatModal({
                         pushMessage({ role: "sys", text: "key removed — back on the telos link." });
                       }}
                     >
-                      ↩ USE TELOS LINK
+                      Use Telos link
                     </button>
                   ) : null}
                   <button
@@ -1263,11 +1431,31 @@ export default function StrategyChatModal({
                       pushMessage({ role: "sys", text: `model → ${DEFAULT_MODEL} (fastest option).` });
                     }}
                   >
-                    ⚡ USE FAST MODEL
+                    Use fast model
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-sm y2k-block"
+                    aria-pressed={webSearch}
+                    onClick={() => {
+                      const next = !webSearch;
+                      setWebSearch(next);
+                      writeStorage(WEB_STORAGE, next ? "1" : "0");
+                      pushMessage({
+                        role: "sys",
+                        text: next
+                          ? "live web lookups auto — current-info questions can cite prices, yields and protocol news."
+                          : "live web lookups off — answers use the model's own knowledge only.",
+                      });
+                    }}
+                  >
+                    Web lookups: {webSearch ? "AUTO" : "OFF"}
                   </button>
                   <p className="y2k-fineprint">
                     works out of the box through the telos llm proxy. paste an
                     openrouter key only if you want to use your own account.
+                    live lookups run for current-info questions and may add a
+                    small openrouter charge.
                   </p>
                 </div>
               ) : (
@@ -1282,33 +1470,49 @@ export default function StrategyChatModal({
             </div>
 
             <div className="y2k-rail-block y2k-howto">
-              <span className="y2k-label">HOW IT WORKS</span>
-              <p>01. chat or brainstorm</p>
-              <p>02. ask to compile</p>
-              <p>03. verify in strategy modal</p>
-              <p>04. register the strategy</p>
-              <p>05. create a vault if you want</p>
+              <span className="y2k-label">GETTING STARTED</span>
+              <p>01. Chat or brainstorm</p>
+              <p>02. Ask to compile</p>
+              <p>03. Review &amp; audit</p>
+              <p>04. Register the strategy</p>
+              <p>05. Create a vault</p>
             </div>
           </aside>
 
           <div className="y2k-chat">
             <div className="y2k-chat-head">
               <div>
-                <span className="y2k-chat-kicker">STRATEGY RADIO</span>
-                <b>Conversation</b>
+                <span className="y2k-chat-kicker">TELOS / STRATEGIST</span>
+                <b>Strategy session</b>
               </div>
               <span className="y2k-onair">
-                <i aria-hidden="true" /> ON AIR
+                <i aria-hidden="true" />
+                {typing || streaming || auditing ? "WORKING" : "READY"}
               </span>
             </div>
             <div className="y2k-transcript" aria-live="polite">
               {messages.map((message) => (
                 <div className={`y2k-msg y2k-msg--${message.role}`} key={message.id}>
                   <div className="y2k-avatar" aria-hidden="true">
-                    {message.role === "user" ? "YOU" : message.role === "sys" ? "!" : "◕"}
+                    {message.role === "user" ? "YOU" : message.role === "sys" ? "SYS" : "TS"}
                   </div>
                   <div className="y2k-bubble">
-                    <p>{message.text}</p>
+                    <p>{renderRichText(message.text)}</p>
+                    {message.sources && message.sources.length > 0 ? (
+                      <div className="y2k-sources">
+                        <span className="y2k-label">WEB SOURCES</span>
+                        {message.sources.map((source) => (
+                          <a
+                            key={source.url}
+                            href={source.url}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {source.title}
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
                     {message.chips ? (
                       <div className="y2k-chips">
                         {message.chips.map((chip) => (
@@ -1343,7 +1547,7 @@ export default function StrategyChatModal({
               {typing ? (
                 <div className="y2k-msg y2k-msg--bot">
                   <div className="y2k-avatar" aria-hidden="true">
-                    ◕
+                    TS
                   </div>
                   <div className="y2k-bubble y2k-typing" aria-label="strategist is typing">
                     <span />
@@ -1356,65 +1560,72 @@ export default function StrategyChatModal({
             </div>
 
             <form className="y2k-composer" onSubmit={onSubmit}>
-              <span className="y2k-search-icon" aria-hidden="true">
-                ⌕
+              <span className="y2k-prompt-char" aria-hidden="true">
+                &gt;
               </span>
               <input
                 ref={inputRef}
                 className="y2k-input"
                 type="text"
                 value={input}
-                placeholder="search a strategy… or just tell me the play"
+                placeholder="Ask for a strategy, or ask to compile…"
                 aria-label="Message the strategy assistant"
                 spellCheck={false}
                 onChange={(event) => setInput(event.target.value)}
               />
               {typing || streaming ? (
                 <button type="button" className="btn y2k-send" onClick={stopLlm}>
-                  ■ STOP
+                  Stop
                 </button>
               ) : (
                 <button type="submit" className="btn y2k-send" disabled={!input.trim()}>
-                  ▶ SEND
+                  Send ↵
                 </button>
               )}
             </form>
-
-            <div className="y2k-statusbar">
-              <span className="y2k-player" aria-hidden="true">
-                <span>⏮</span>
-                <span className="y2k-play">▶</span>
-                <span>⏭</span>
-              </span>
-              <span
-                className={`y2k-led${typing || streaming || auditing ? " is-busy" : ""}`}
-                aria-hidden="true"
-              />
-              <span>
-                {streaming
-                  ? "RECEIVING…"
-                  : thinkingTokens > 0
-                    ? `THINKING… ${thinkingTokens}t`
-                    : typing
-                      ? "COMPUTING…"
-                      : auditing
-                        ? "AUDITING… ETHSKILLS"
-                        : llmReady
-                          ? "OPENROUTER LINKED"
-                          : server.ready
-                            ? "TELOS LLM ONLINE"
-                            : "LOCAL SIM ONLINE"}
-              </span>
-              <span className="y2k-statusbar-spacer" />
-              <span className="y2k-statusbar-track" aria-hidden="true">
-                <i style={{ width: typing || streaming || auditing ? "68%" : "100%" }} />
-              </span>
-              <span>TESTNET ONLY</span>
-              <span className="y2k-blink" aria-hidden="true">
-                ▌
-              </span>
-            </div>
           </div>
+        </div>
+
+        <div className="y2k-statusbar">
+          <span className="y2k-status-item" aria-hidden="true">
+            ⑂ main
+          </span>
+          <span className="y2k-status-item" aria-hidden="true">
+            ⊘ 0
+          </span>
+          <span className="y2k-status-item" aria-hidden="true">
+            △ 0
+          </span>
+          <span
+            className={`y2k-led${typing || streaming || auditing ? " is-busy" : ""}`}
+            aria-hidden="true"
+          />
+          <span>
+            {streaming
+              ? draftingChars > 0
+                ? `Receiving… ${formatCount(draftingChars)} chars`
+                : "Receiving…"
+              : thinkingTokens > 0
+                ? `Thinking… ${thinkingTokens}t`
+                : typing
+                  ? webActive
+                    ? "Thinking… searching the web…"
+                    : "Thinking…"
+                  : auditing
+                    ? "Auditing with EthSkills…"
+                    : llmReady
+                      ? "OpenRouter linked"
+                      : server.ready
+                        ? "Telos LLM online"
+                        : "Local sim online"}
+          </span>
+          <span className="y2k-statusbar-spacer" />
+          <span className="y2k-status-item">
+            WEB {webSearch ? "AUTO" : "OFF"}
+          </span>
+          <span className="y2k-status-item">Solidity</span>
+          <span className="y2k-status-item">UTF-8</span>
+          <span className="y2k-status-item">Telos Testnet</span>
         </div>
       </div>
     </div>
@@ -1510,9 +1721,9 @@ function StrategyCard({
       {spec.code ? (
         <details className="y2k-code-wrap">
           <summary>
-            <span>VIEW CONTRACT</span>
+            <span>Contract source</span>
             <span>
-              {lineCount} LINES · {strategyFileName(spec)}
+              {lineCount} lines · {strategyFileName(spec)}
             </span>
           </summary>
           <pre className="y2k-code">
@@ -1589,20 +1800,20 @@ function StrategyCard({
               {audit.status === "failed" ? (
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn btn-sm y2k-btn-primary"
                   onClick={() => onRepair(spec)}
                   disabled={busy}
                 >
-                  REPAIR + RE-AUDIT →
+                  Repair &amp; re-audit →
                 </button>
               ) : (
                 <button
                   type="button"
-                  className="btn btn-sm"
+                  className="btn btn-sm y2k-btn-primary"
                   onClick={() => onRetry(spec)}
                   disabled={busy}
                 >
-                  RETRY AUDIT ↻
+                  Retry audit ↻
                 </button>
               )}
             </div>
@@ -1613,7 +1824,7 @@ function StrategyCard({
       <div className="y2k-card-actions">
         <button
           type="button"
-          className="btn btn-sm"
+          className="btn btn-sm y2k-btn-primary"
           onClick={() => onUse(spec)}
           disabled={!canUse}
           title={
@@ -1627,15 +1838,15 @@ function StrategyCard({
           }
         >
           {!spec.code
-            ? "NO CONTRACT"
+            ? "No contract"
             : !validationOk
-              ? "FIX VALIDATOR ISSUES"
+              ? "Fix validator issues"
               : cleared
-                ? "REVIEW IN STRATEGY MODAL →"
-                : "REVIEW UNVERIFIED →"}
+                ? "Review strategy →"
+                : "Review unverified →"}
         </button>
         <button type="button" className="btn btn-plain btn-sm" onClick={() => onCopy(spec)}>
-          {copied ? "COPIED ✓" : spec.code ? "COPY CONTRACT" : "COPY SPEC"}
+          {copied ? "Copied ✓" : spec.code ? "Copy contract" : "Copy spec"}
         </button>
         <button
           type="button"
@@ -1644,7 +1855,7 @@ function StrategyCard({
           disabled={!spec.code}
           title={spec.code ? "Download the .sol file" : "No contract source on this draft"}
         >
-          ⤓ .SOL
+          Download .sol
         </button>
       </div>
       {!cleared ? (
