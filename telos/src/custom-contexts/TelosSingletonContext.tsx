@@ -2,10 +2,7 @@ import { useWallets, UseWalletsInterface } from "@privy-io/react-auth";
 import { createContext, ReactNode, useEffect, useState } from "react";
 import { OpenRouter } from "../../llm/OpenRouter";
 import TelosAPI from "../api-handler/Telos/telos-api-methods";
-import { LaunchPad } from "../interfaces/LaunchPad";
 import LLM from "../interfaces/LLM";
-import { HookrFun } from "../Launchpads/HookrFun";
-import { Pons } from "../Launchpads/Pons";
 import { Stripe } from "../microservices/Stripe";
 import { ModelManager } from "../onchain/ModelManager";
 import { OnchainAgentManager } from "../onchain/OnchainAgentManager";
@@ -24,11 +21,11 @@ type SingletonManager = {
 };
 //idea proposed managed instance for all of our sclasses accross all pages
 //so all data is on the same page and is effeciently retrieved and used
-export const TelosSingletonContext = createContext(null);
+export const TelosSingletonContext = createContext<any | null>(null);
 
 export function telosSingletonManager({ children }: { children: ReactNode }) {
   const { wallets }: UseWalletsInterface = useWallets();
-  const [singleton, setSingleton] = useState<SingletonManager>();
+  const [singleton, setSingleton] = useState<SingletonManager | null>(null);
 
   useEffect(() => {
     if (wallets[0]?.address) {
@@ -122,13 +119,14 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
   }
 
   function launchpads() {
-    try {
-      const launcpads: Map<string, LaunchPad> = new Map<string, LaunchPad>();
-      launchpads.set("pons", new Pons());
-      launchpads.set("hoookrfun", new HookrFun());
-    } catch (error) {
-      console.log(error);
-    }
+    // try {
+    //   const launchpads: Map<string, LaunchPad> = new Map<string, LaunchPad>();
+    //   launchpads.set("pons", new Pons("",));
+    //   launchpads.set("hoookrfun", new HookrFun("",[],onchainExe));
+    // } catch (error) {
+    //   console.log(error);
+    //   return null;
+    // }
   }
 
   async function reinstantiateClasses() {}
@@ -151,7 +149,11 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
     }
   }
   return (
-    <TelosSingletonContext.Provider value={null}>
+    <TelosSingletonContext.Provider
+      value={{
+        singleton,
+      }}
+    >
       {children}
     </TelosSingletonContext.Provider>
   );
