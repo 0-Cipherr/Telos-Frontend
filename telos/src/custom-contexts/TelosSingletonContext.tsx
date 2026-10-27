@@ -21,9 +21,15 @@ type SingletonManager = {
 };
 //idea proposed managed instance for all of our sclasses accross all pages
 //so all data is on the same page and is effeciently retrieved and used
-export const TelosSingletonContext = createContext<any | null>(null);
+export const TelosSingletonContext = createContext<any | null>(
+  TelosSingletonManagerProvider,
+);
 
-export function telosSingletonManager({ children }: { children: ReactNode }) {
+export function TelosSingletonManagerProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const { wallets }: UseWalletsInterface = useWallets();
   const [singleton, setSingleton] = useState<SingletonManager | null>(null);
 
@@ -142,6 +148,7 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
           );
         }
       } else {
+        throw new Error("Single not properly instantiated!");
       }
     } catch (error) {
       console.log(error);

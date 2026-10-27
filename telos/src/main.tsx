@@ -1,5 +1,5 @@
 import { PrivyProvider } from "@privy-io/react-auth";
-import { StrictMode, type ReactNode } from "react";
+import { StrictMode, useContext, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App, { PreviewApp } from "./App";
@@ -8,10 +8,14 @@ import { CreatedVaultsProvider } from "./custom-contexts/CreatedVaultsContext";
 import { DeedMarketProvider } from "./custom-contexts/DeedMarketContext";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
 import { StrategyLauncherProvider } from "./custom-contexts/StrategyLauncherContext";
+import {
+  TelosSingletonContext,
+  TelosSingletonManagerProvider,
+} from "./custom-contexts/TelosSingletonContext";
 import { TxConfirmerProvider } from "./custom-contexts/TxConfirmerContext";
+import "./deeds.css";
 import "./index.css";
 import "./tailwind.css";
-import "./deeds.css";
 
 const appId = import.meta.env.VITE_PRIVY_APP_ID as string | undefined;
 const missing =
@@ -37,20 +41,27 @@ const previewReason: "missing" | "insecure" | null = missing
     ? "insecure"
     : null;
 
+const singletonContext = useContext(TelosSingletonContext);
+
 // Keep the app-level contexts inside PrivyProvider so hooks such as
 // `useWallets` can see the connected wallet. The strategy launcher wraps the
 // router tree so the agent is available on every page.
 function Providers({ children }: { children: ReactNode }) {
   return (
-    <CreatedVaultsProvider>
-      <DeedMarketProvider>
-        <TxConfirmerProvider>
-          <RegistryActionModalProvider registry={""}>
-            <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
-          </RegistryActionModalProvider>
-        </TxConfirmerProvider>
-      </DeedMarketProvider>
-    </CreatedVaultsProvider>
+    <TelosSingletonManagerProvider>
+      <CreatedVaultsProvider>
+        <DeedMarketProvider>
+          <TxConfirmerProvider>
+            <RegistryActionModalProvider
+              registry={singletonContext?.registryInstance}
+              launchPads={singletonContext.launchpadsInstance}
+            >
+              <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
+            </RegistryActionModalProvider>
+          </TxConfirmerProvider>
+        </DeedMarketProvider>
+      </CreatedVaultsProvider>
+    </TelosSingletonManagerProvider>
   );
 }
 

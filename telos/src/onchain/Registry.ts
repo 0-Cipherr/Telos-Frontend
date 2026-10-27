@@ -1,7 +1,7 @@
 import type { WriteContractReturnType } from "viem";
 import type TelosAPI from "../api-handler/Telos/telos-api-methods";
 import type { address } from "../types/solidity-types";
-import type { OnchainAgentManager } from "./OnchainAgent";
+import type { OnchainAgentManager } from "./OnchainAgentManager";
 import type { OnchainExecutor } from "./OnchainExecutor";
 //one hsared instance
 export class Registry {
