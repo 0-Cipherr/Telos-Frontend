@@ -7,11 +7,9 @@ import {
 import type { address } from "../types/solidity-types";
 
 export class OnchainExecutor {
-  protected client: WalletClient<any | null>;
+  protected client: any | null = null;
 
-  constructor(_client: WalletClient<any | null>) {
-    this.client = _client;
-  }
+  constructor() {}
 
   async writeContract(params: any): Promise<WriteContractReturnType | null> {
     try {
