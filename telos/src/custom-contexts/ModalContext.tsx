@@ -1,4 +1,5 @@
 import { useWallets } from "@privy-io/react-auth";
+import { parseEther } from "viem";
 import {
   createContext,
   useCallback,
@@ -11,7 +12,11 @@ import {
 import type { LaunchPad } from "../interfaces/LaunchPad";
 import type { Registry } from "../onchain/Registry";
 import type { StrategySpec } from "../strategies/strategy-standard";
-import type { CreatorRewardMode } from "../vaults";
+import {
+  MAX_CREATOR_FEE_PERCENT,
+  PROTOCOL_FEE_PERCENT,
+  type CreatorRewardMode,
+} from "../vaults";
 
 export type RegistryContextType = {
   open: boolean;
@@ -48,9 +53,19 @@ export type RegistryContextType = {
   vaultCreatorRewards: CreatorRewardMode;
   setVaultCreatorRewards: (mode: CreatorRewardMode) => void;
 
-  /** Creator fee in percentage points (0-8). */
+  /** Creator fee in percentage points, used by the form and displays. */
   vaultFee: number;
   setVaultFee: (fee: number) => void;
+
+  /** The same creator fee in ethers (wei) for the deploy payload. */
+  vaultFeeWei: bigint;
+  setVaultFeeWei: (fee: bigint) => void;
+
+  /** Fixed protocol fee in percentage points (5%). */
+  protocolFee: number;
+
+  /** Fixed protocol fee in ethers (wei) for the deploy payload. */
+  protocolFeeWei: bigint;
 
   feeReceiver: string;
   setFeeReceiver: (receiver: string) => void;
@@ -77,6 +92,13 @@ export type RegistryContextType = {
 
 export const DEFAULT_AGENT_MODEL = "openai/gpt-4o-mini";
 
+const PROTOCOL_FEE_WEI = parseEther(
+  (PROTOCOL_FEE_PERCENT / 100).toString(),
+);
+const DEFAULT_CREATOR_FEE_WEI = parseEther(
+  (MAX_CREATOR_FEE_PERCENT / 100).toString(),
+);
+
 const RegistryActionModalContext = createContext<RegistryContextType | null>(
   null,
 );
@@ -100,7 +122,9 @@ export function RegistryActionModalProvider({
   const [vaultLaunchpads, setVaultLaunchpads] = useState<string[]>(["pons"]);
   const [vaultCreatorRewards, setVaultCreatorRewards] =
     useState<CreatorRewardMode>("fees");
-  const [vaultFee, setVaultFee] = useState(5);
+  const [vaultFee, setVaultFee] = useState(MAX_CREATOR_FEE_PERCENT);
+  const [vaultFeeWei, setVaultFeeWei] =
+    useState<bigint>(DEFAULT_CREATOR_FEE_WEI);
   const [feeReceiver, setFeeReceiver] = useState("");
   const [strategy, setStrategy] = useState("");
   const [strategySpec, setStrategySpec] = useState<StrategySpec | null>(null);
@@ -135,7 +159,14 @@ export function RegistryActionModalProvider({
               VaultAssets.feeReceiversInfo feeReceivers;
           }
           */
-      const encodedParams = await encodeParams([wallets[0]?.address, vaultAddresses,vaultName, vaultTicker,wallets[0]?.address,,]  ]);
+      const encodedParams = await encodeParams([
+        wallets[0]?.address,
+        vaultAddresses,
+        vaultName,
+        vaultTicker,
+        wallets[0]?.address,
+        ,
+      ]);
       await registry.deployHubVault(
         null,
         wallets[0]?.address,
@@ -163,7 +194,8 @@ export function RegistryActionModalProvider({
       setVaultAddresses([]);
       setVaultLaunchpads(["pons"]);
       setVaultCreatorRewards("fees");
-      setVaultFee(5);
+      setVaultFee(MAX_CREATOR_FEE_PERCENT);
+      setVaultFeeWei(DEFAULT_CREATOR_FEE_WEI);
       setFeeReceiver("");
       setStrategy("");
       setStrategySpec(null);
@@ -196,6 +228,10 @@ export function RegistryActionModalProvider({
         setVaultCreatorRewards,
         vaultFee,
         setVaultFee,
+        vaultFeeWei,
+        setVaultFeeWei,
+        protocolFee: PROTOCOL_FEE_PERCENT,
+        protocolFeeWei: PROTOCOL_FEE_WEI,
         feeReceiver,
         setFeeReceiver,
         strategy,

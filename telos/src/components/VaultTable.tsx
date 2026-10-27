@@ -7,6 +7,7 @@ import {
   creatorProfilePath,
   formatUsd,
   tvlValue,
+  vaultLaunchpadPairs,
   weeklyEarnings,
 } from "../vaults";
 import { useTxConfirmer } from "../custom-contexts/TxConfirmerContext";
@@ -89,6 +90,7 @@ function VaultRow({
     vault.chains.length > 1
       ? `${vault.chains[0]} +${vault.chains.length - 1}`
       : vault.chain;
+  const launchpadPairs = vaultLaunchpadPairs(vault);
 
   const handleDeposit = () => {
     void confirmTx({
@@ -118,6 +120,46 @@ function VaultRow({
         <span className="vault-sub">
           {vault.kind === "ready" ? `via ${vault.proto}` : vault.strategy}
         </span>
+        {launchpadPairs.length ? (
+          <span className="vault-pairs">
+            {launchpadPairs.map((pair) => (
+              <span
+                className={`vault-pair vault-pair--${pair.launchpad}`}
+                key={`${pair.launchpad}-${pair.symbol}`}
+                aria-label={`${
+                  pair.launchpad === "pons"
+                    ? "Pons stock pair"
+                    : "Hookr token"
+                }: ${pair.name} (${pair.symbol})`}
+                title={`${
+                  pair.launchpad === "pons"
+                    ? "Pons stock pair"
+                    : "Hookr token"
+                } · ${pair.name} (${pair.symbol})${
+                  pair.address ? ` · ${pair.address}` : ""
+                }`}
+              >
+                {pair.logo ? (
+                  <img
+                    src={pair.logo}
+                    alt=""
+                    width={12}
+                    height={12}
+                    loading="lazy"
+                  />
+                ) : (
+                  <span aria-hidden="true">
+                    {pair.kind === "stock" ? "📈" : "🪝"}
+                  </span>
+                )}
+                <span className="vault-pair-kind">
+                  {pair.kind === "stock" ? "STOCK" : "TOKEN"}
+                </span>
+                <span>{pair.symbol}</span>
+              </span>
+            ))}
+          </span>
+        ) : null}
       </td>
       <td className="nowrap" title={vault.chains.join(" · ")}>
         🌐 {chains}
@@ -202,6 +244,13 @@ export default function VaultTable({
 
     const source =
       vault.kind === "ready" ? (vault.proto ?? "") : vault.strategy;
+    const launchpadTerms = vaultLaunchpadPairs(vault).flatMap((pair) => [
+      pair.launchpad,
+      pair.kind,
+      pair.symbol,
+      pair.name,
+      pair.address ?? "",
+    ]);
     return [
       vault.id,
       vault.name,
@@ -210,6 +259,7 @@ export default function VaultTable({
       vault.chains.join(" "),
       vault.description,
       vault.creator,
+      ...launchpadTerms,
     ]
       .join(" ")
       .toLowerCase()

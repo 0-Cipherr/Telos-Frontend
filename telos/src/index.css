@@ -520,6 +520,45 @@ input[type="range"] {
   font-size: 10px;
 }
 
+.vault-pairs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.vault-pair {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: var(--panel);
+  padding: 1px 4px;
+  color: var(--lime);
+  font: 700 7.5px/1.2 "Courier New", monospace;
+  letter-spacing: 0.03em;
+  white-space: nowrap;
+}
+
+.vault-pair img {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  border-radius: 3px;
+  background: #fff;
+  object-fit: contain;
+}
+
+.vault-pair-kind {
+  color: var(--muted);
+  font-size: 7px;
+}
+
+.vault-pair--hookr {
+  color: var(--text);
+}
+
 .apy,
 .lime {
   color: var(--lime);

@@ -15,18 +15,20 @@ interface AgentInfo {
 // this is a singleton single shard instance across all places
 export class OnchainAgentManager {
   protected llm: LLM;
-  protected agents: Array<AgentInfo> | null;
+  protected agents: Map<number, AgentInfo> | null;
   protected currentAgentID: number;
   constructor(_llm: LLM) {
     this.llm = _llm;
-    this.agents = new Array<AgentInfo>();
+    this.agents = new Map<number, AgentInfo>(); //maping for agnts
     const agentsAvailable = async () => {
       return await this.getCurrentAgentID();
     };
     this.currentAgentID = Number(agentsAvailable());
   }
 
-  getCurrentAgentId() {}
+  getCurrentAgentId() {
+    return this.currentAgentID;
+  }
 
   getAllAgentsAvailable() {}
   setLLM(_llm: OpenRouter) {
@@ -66,17 +68,17 @@ export class OnchainAgentManager {
   }
 
   getAgentPV(agentId: number) {
-    return this.agents?.at(agentId)?.agent.getPV();
+    return this.agents?.get(agentId)?.agent.getPV();
   }
 
   addAgent(agent: Agent) {
-    this.agents?.push({ id: this.currentAgentID, agent });
+    this.agents?.set(this.currentAgentID, { id: this.currentAgentID, agent });
     this.increaseCurrentAgentId();
   }
 
   getAgent(id: number) {
     try {
-      return this.agents?.at(id);
+      return this.agents?.get(id);
     } catch (error) {
       console.log(error);
 
@@ -86,8 +88,8 @@ export class OnchainAgentManager {
   increaseCurrentAgentId() {
     this.currentAgentID++;
   }
-  async getCurrentAgentID(): Promise<number> {
-    return 0; //get this from db update based on total agents
+  async getCurrentAgentID() {
+    return this.currentAgentID; //get this from db update based on total agents
   }
   async createWallet() {
     try {
@@ -131,7 +133,9 @@ export class OnchainAgentManager {
 
   async uploadAgent() {}
 
-  async getAgentOwner() {}
+  async getAgentOwner(id: number) {
+    return this.getAgent(id)?.agent.getCreator();
+  }
 }
 console.log("test");
 // const llm = new OpenRouter("", "", "", new TelosAPI("", [], ""));

@@ -32,6 +32,8 @@ export type Vault = {
   tvl: string;
   tvlUsd: number;
   fee: number;
+  /** Fixed protocol fee recorded when the vault was created. */
+  protocolFee?: number;
   creator: string;
   /** Full creator address when available (used by the creator profile). */
   creatorAddress?: string;
@@ -43,6 +45,20 @@ export type Vault = {
   addresses?: string[];
   /** Launchpad listings selected at creation time. */
   launchpads?: string[];
+  /** Robinhood stock token paired to a pons launch (and its reward asset). */
+  launchpadStock?: {
+    symbol: string;
+    name: string;
+    address: string;
+    logo: string;
+  };
+  /** Token created by a Hookr.fun launch. */
+  launchpadToken?: {
+    symbol: string;
+    name: string;
+    address?: string;
+    logo?: string;
+  };
   /** Where the creator's share of yield is routed. */
   creatorRewards?: CreatorRewardMode;
   /** Whether vault shares can be staked from the vault page. */
@@ -56,11 +72,32 @@ export type Vault = {
   agentEnabled?: boolean;
   /** Model that runs the vault's onchain strategy agent between harvests. */
   agentModel?: string;
+  /** Whether the agent opted into the Telos Eco scheduled-task pool. */
+  agentEco?: boolean;
   /** Model that authored the attached strategy contract. */
   strategyModel?: string;
 };
 
+/** Asset shown for a launchpad vault: a pons stock pair or Hookr token. */
+export type VaultLaunchpadAsset = {
+  launchpad: "pons" | "hookr";
+  kind: "stock" | "token";
+  symbol: string;
+  name: string;
+  address?: string;
+  logo?: string;
+};
+
 export type VaultFilterKind = "all" | VaultKind;
+
+/**
+ * Fixed protocol fee charged on yield. The creator fee is capped so the
+ * combined fee stays at 8% or less and depositors keep most of the yield.
+ */
+export const PROTOCOL_FEE_PERCENT = 5;
+export const MAX_CREATOR_FEE_PERCENT = 3;
+export const MAX_TOTAL_FEE_PERCENT =
+  PROTOCOL_FEE_PERCENT + MAX_CREATOR_FEE_PERCENT;
 
 export type CreatorRewardMode = "mine-ai" | "stake" | "fees";
 
@@ -121,7 +158,7 @@ export const LAUNCHPADS: Launchpad[] = [
   {
     id: "pons",
     name: "Pons on Robinhood",
-    description: "Bonding-curve token launchpad on Robinhood Chain.",
+    description: "Stock-paired bonding-curve launchpad on Robinhood Chain.",
     emoji: "🅿️",
     logo: "/launchpads/pons.png",
     chain: "Robinhood Testnet",
@@ -545,6 +582,69 @@ export const VAULTS: Vault[] = [
     strategyModel: "openai/gpt-4o",
     createdAt: "2026-04-22",
   },
+  {
+    id: "TL-014",
+    name: "AAPL Stock Curve",
+    asset: "AAPL",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet", "Base"],
+    kind: "custom",
+    proto: "Pons",
+    strategy: "Stock-paired launch",
+    strategySummary:
+      "A pons bonding-curve launch paired with tokenized AAPL. Buyers spend AAPL, sellers get AAPL back, and creator rewards accrue in AAPL.",
+    description:
+      "Example launchpad vault showing how a pons stock pair appears in the registry. AAPL is both the pair token and the reward asset. Sample data.",
+    allocations: [{ label: "AAPL / launch token curve", pct: 100 }],
+    risk: "HIGH",
+    apy: 18.4,
+    tvl: "420K",
+    tvlUsd: 420_000,
+    fee: 8,
+    creator: "0x7a21…4f8c",
+    color: "#8fd400",
+    h: [7, 8, 8, 9, 9, 10, 11, 11, 12, 13],
+    status: "live",
+    launchpads: ["pons"],
+    launchpadStock: {
+      symbol: "AAPL",
+      name: "Apple",
+      address: "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+      logo: "https://cdn.robinhood.com/ncw_assets/logos/0xaf3d76f1834a1d425780943c99ea8a608f8a93f9.png",
+    },
+    createdAt: "2026-10-20",
+  },
+  {
+    id: "TL-015",
+    name: "Hookr Plunder",
+    asset: "PLD",
+    chain: "Robinhood Testnet",
+    chains: ["Robinhood Testnet"],
+    kind: "custom",
+    proto: "Hookr.fun",
+    strategy: "Hookr launch",
+    strategySummary:
+      "A Hookr.fun launch with fixed reward hooks: 0.5% burn, 3% LP rewards, 10% creator royalty and 20% protocol share.",
+    description:
+      "Example Hookr.fun vault. The launch token is PLUNDER, paired with WETH in its Hookr pool. Sample data.",
+    allocations: [{ label: "PLUNDER / WETH Hookr pool", pct: 100 }],
+    risk: "HIGH",
+    apy: 22.1,
+    tvl: "180K",
+    tvlUsd: 180_000,
+    fee: 10,
+    creator: "0x3c88…b1e2",
+    color: "#c084fc",
+    h: [8, 9, 9, 10, 11, 12, 12, 13, 14, 15],
+    status: "live",
+    launchpads: ["hookr"],
+    launchpadToken: {
+      symbol: "PLUNDER",
+      name: "Plunder",
+      logo: "/launchpads/hookr.png",
+    },
+    createdAt: "2026-10-22",
+  },
 ];
 
 export const ASSETS = ["USDC", "USDT", "DAI", "WETH", "WBTC"];
@@ -601,6 +701,29 @@ export function median(values: number[]): number {
   return sorted.length % 2 === 1
     ? sorted[middle]
     : (sorted[middle - 1] + sorted[middle]) / 2;
+}
+
+/** Launchpad assets attached to a vault, in display order. */
+export function vaultLaunchpadPairs(vault: Vault): VaultLaunchpadAsset[] {
+  const pairs: VaultLaunchpadAsset[] = [];
+
+  if (vault.launchpadStock) {
+    pairs.push({
+      launchpad: "pons",
+      kind: "stock",
+      ...vault.launchpadStock,
+    });
+  }
+
+  if (vault.launchpadToken) {
+    pairs.push({
+      launchpad: "hookr",
+      kind: "token",
+      ...vault.launchpadToken,
+    });
+  }
+
+  return pairs;
 }
 
 /** Full creator address when known, otherwise the stored display address. */

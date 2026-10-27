@@ -4,6 +4,7 @@ import {
   creatorProfilePath,
   formatUsd,
   formatUsdCompact,
+  vaultLaunchpadPairs,
   weeklyEarnings,
   type Vault,
 } from "../vaults";
@@ -21,6 +22,9 @@ export default function VaultTile({ vault, own = false }: Props) {
   const extraChains = Math.max(0, vault.chains.length - visibleChains.length);
   const weekly = weeklyEarnings(vault.apy);
   const hasApy = vault.apy > 0;
+  const pairLabel = vaultLaunchpadPairs(vault)
+    .map((pair) => `${pair.kind === "stock" ? "STOCK" : "TOKEN"} ${pair.symbol}`)
+    .join(" · ");
 
   return (
     <article className="vault-tile">
@@ -46,6 +50,7 @@ export default function VaultTile({ vault, own = false }: Props) {
           <p>
             {vault.kind === "ready" ? "READY-MADE" : "CUSTOM"} ·{" "}
             {vault.proto ?? "CREATOR STRATEGY"}
+            {pairLabel ? ` · ${pairLabel}` : ""}
           </p>
         </div>
       </div>

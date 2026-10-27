@@ -3,6 +3,7 @@ import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App, { PreviewApp } from "./App";
+import SplashScreen from "./SplashScreen";
 import { CreatedVaultsProvider } from "./custom-contexts/CreatedVaultsContext";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
 import { StrategyLauncherProvider } from "./custom-contexts/StrategyLauncherContext";
@@ -51,6 +52,7 @@ function Providers({ children }: { children: ReactNode }) {
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <SplashScreen />
     <BrowserRouter>
       {previewReason ? (
         <Providers>

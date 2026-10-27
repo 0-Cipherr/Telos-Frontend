@@ -1,10 +1,14 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
-import { isAddress } from "viem";
+import { isAddress, parseEther } from "viem";
 import { EVM_CHAINS } from "../../chains";
 import { useCreatedVaults } from "../../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../../custom-contexts/ModalContext";
 import { useTxConfirmer } from "../../custom-contexts/TxConfirmerContext";
+import {
+  PONS_STOCK_TOKENS,
+  type PonsStockToken,
+} from "../../Launchpads/Pons";
 import { extractContractName } from "../../strategies/strategy-standard";
 import {
   MODEL_OPTIONS,
@@ -15,6 +19,8 @@ import { lockBodyScroll } from "../../utils/scrollLock";
 import {
   CREATOR_REWARDS,
   LAUNCHPADS,
+  MAX_CREATOR_FEE_PERCENT,
+  MAX_TOTAL_FEE_PERCENT,
   creatorRewardLabel,
   type CreatorRewardMode,
   type Vault,
@@ -62,6 +68,8 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultLaunchpads,
     setVaultCreatorRewards,
     setVaultFee,
+    setVaultFeeWei,
+    protocolFee,
     setFeeReceiver,
     setStrategySpec,
     enableAgent,
@@ -73,14 +81,18 @@ export default function RegistryActionModal({ address }: Props) {
   const [name, setName] = useState("");
   const [ticker, setTicker] = useState("");
   const [description, setDescription] = useState("");
-  const [fee, setFee] = useState(5);
+  const [fee, setFee] = useState(MAX_CREATOR_FEE_PERCENT);
   const [feeReceiverValue, setFeeReceiverValue] = useState("");
   const [chains, setChains] = useState<string[]>(["Base"]);
   const [launchpads, setLaunchpads] = useState<string[]>(["pons"]);
+  const [ponsStock, setPonsStock] = useState<PonsStockToken>(
+    PONS_STOCK_TOKENS[0],
+  );
   const [creatorRewards, setCreatorRewards] =
     useState<CreatorRewardMode>("fees");
   const [stakeEnabled, setStakeEnabled] = useState(true);
   const [showCreatorRewards, setShowCreatorRewards] = useState(true);
+  const [agentEco, setAgentEco] = useState(false);
   const [error, setError] = useState("");
 
   // Keep the form in sync with the calling flow (strategy lab, launch panel,
@@ -90,13 +102,23 @@ export default function RegistryActionModal({ address }: Props) {
     setName(vaultName || "");
     setTicker(vaultTicker || "");
     setDescription(vaultDescription || strategySpec?.thesis || "");
-    setFee(Number.isFinite(vaultFee) ? vaultFee : 5);
+    setFee(
+      Math.min(
+        MAX_CREATOR_FEE_PERCENT,
+        Math.max(
+          0,
+          Number.isFinite(vaultFee) ? vaultFee : MAX_CREATOR_FEE_PERCENT,
+        ),
+      ),
+    );
     setFeeReceiverValue(feeReceiver || address || "");
     setChains(vaultChains.length ? vaultChains : ["Base"]);
     setLaunchpads(vaultLaunchpads.length ? vaultLaunchpads : ["pons"]);
+    setPonsStock(PONS_STOCK_TOKENS[0]);
     setCreatorRewards(vaultCreatorRewards);
     setStakeEnabled(true);
     setShowCreatorRewards(true);
+    setAgentEco(false);
     const seededAddresses =
       vaultAddresses.length > 0
         ? vaultAddresses
@@ -182,7 +204,11 @@ export default function RegistryActionModal({ address }: Props) {
     if (!trimmedReceiver || !isAddress(trimmedReceiver)) {
       return setError("Fee receiver must be a valid EVM address.");
     }
-    if (fee < 0 || fee > 8) return setError("Creator fee must be between 0 and 8%.");
+    if (fee < 0 || fee > MAX_CREATOR_FEE_PERCENT) {
+      return setError(
+        `Creator fee must be between 0 and ${MAX_CREATOR_FEE_PERCENT}%.`,
+      );
+    }
     if (chains.length === 0) return setError("Select at least one EVM network.");
     if (launchpads.length === 0) {
       return setError("Select at least one launchpad listing.");
@@ -209,6 +235,8 @@ export default function RegistryActionModal({ address }: Props) {
         { label: "Ticker", value: trimmedTicker },
         { label: "Fee receiver", value: shortAddress(trimmedReceiver) },
         { label: "Creator fee", value: `${fee}%` },
+        { label: "Protocol fee", value: `${protocolFee}%` },
+        { label: "Total fees", value: `${fee + protocolFee}%` },
         {
           label: "Strategy",
           value: strategySpec
@@ -223,6 +251,18 @@ export default function RegistryActionModal({ address }: Props) {
         },
         { label: "Networks", value: `${chains.length} EVM networks` },
         { label: "Launchpads", value: launchpadNames },
+        ...(launchpads.includes("pons")
+          ? [
+              {
+                label: "Pons stock pair",
+                value: `${ponsStock.symbol} · ${shortAddress(ponsStock.address)}`,
+              },
+              {
+                label: "Pons terms",
+                value: `1B supply · 1% curve fee · rewards paid in ${ponsStock.symbol}`,
+              },
+            ]
+          : []),
         {
           label: "Creator rewards",
           value: creatorRewardLabel(creatorRewards),
@@ -248,6 +288,14 @@ export default function RegistryActionModal({ address }: Props) {
             ? `enabled · ${llmLabel(agentModel)}`
             : "disabled",
         },
+        ...(enableAgent && agentEco
+          ? [
+              {
+                label: "Telos Eco",
+                value: "weekly strategy discovery · shared results",
+              },
+            ]
+          : []),
       ],
       note: "Testnet only. Deployment is simulated in this build — no contract call is made.",
     });
@@ -285,6 +333,7 @@ export default function RegistryActionModal({ address }: Props) {
       tvl: "0",
       tvlUsd: 0,
       fee,
+      protocolFee,
       creator: shortAddress(trimmedReceiver),
       creatorAddress: trimmedReceiver,
       color: "#8fd400",
@@ -293,6 +342,14 @@ export default function RegistryActionModal({ address }: Props) {
       createdAt: now.toISOString().slice(0, 10),
       addresses: cleanAddresses,
       launchpads,
+      launchpadStock: launchpads.includes("pons") ? { ...ponsStock } : undefined,
+      launchpadToken: launchpads.includes("hookr")
+        ? {
+            symbol: trimmedTicker,
+            name: trimmedName,
+            logo: "/launchpads/hookr.png",
+          }
+        : undefined,
       creatorRewards,
       stakeEnabled,
       showCreatorRewards,
@@ -301,6 +358,7 @@ export default function RegistryActionModal({ address }: Props) {
       strategyModel: strategySpec?.model,
       agentEnabled: enableAgent,
       agentModel: enableAgent ? agentModel : undefined,
+      agentEco: enableAgent ? agentEco : false,
     };
 
     setOwner(trimmedReceiver);
@@ -311,7 +369,9 @@ export default function RegistryActionModal({ address }: Props) {
     setVaultAddresses(cleanAddresses);
     setVaultLaunchpads(launchpads);
     setVaultCreatorRewards(creatorRewards);
+    // The form shows percent; the provider/deploy payload receives ethers.
     setVaultFee(fee);
+    setVaultFeeWei(parseEther((fee / 100).toString()));
     setFeeReceiver(trimmedReceiver);
     setStrategySpec(strategySpec);
     setEnableAgent(enableAgent);
@@ -406,12 +466,23 @@ export default function RegistryActionModal({ address }: Props) {
                   className="input"
                   type="number"
                   min={0}
-                  max={8}
+                  max={MAX_CREATOR_FEE_PERCENT}
                   step={1}
                   value={fee}
-                  onChange={(event) => setFee(Number(event.target.value))}
+                  onChange={(event) =>
+                    setFee(
+                      Math.min(
+                        MAX_CREATOR_FEE_PERCENT,
+                        Math.max(0, Number(event.target.value)),
+                      ),
+                    )
+                  }
                 />
-                <p className="field-hint">Hard-capped at 8% by the standard.</p>
+                <p className="field-hint">
+                  Protocol fee: {protocolFee}% · total: {fee + protocolFee}%.
+                  Creator fee is capped at {MAX_CREATOR_FEE_PERCENT}% so total
+                  fees stay at {MAX_TOTAL_FEE_PERCENT}% or less.
+                </p>
               </div>
             </div>
 
@@ -585,7 +656,62 @@ export default function RegistryActionModal({ address }: Props) {
                   );
                 })}
               </div>
+              {launchpads.includes("hookr") ? (
+                <p className="field-hint registry-group-hint">
+                  Hookr fixed rewards: 0.5% auto-burn · 3% LP rewards · 10%
+                  creator royalty · 20% protocol share.
+                </p>
+              ) : null}
             </fieldset>
+
+            {launchpads.includes("pons") ? (
+              <fieldset className="registry-group">
+                <legend>
+                  <span>📈 Pons stock pair</span>
+                  <span className="registry-count">{ponsStock.symbol}</span>
+                </legend>
+                <p className="field-hint registry-group-hint">
+                  Pons pairs the launch with the stock you pick. Buyers spend
+                  that stock, sellers get it back, and creator/vault rewards
+                  accrue in it. The canonical contract address is stored with
+                  the vault.
+                </p>
+                <div className="launchpad-picker">
+                  {PONS_STOCK_TOKENS.map((stock) => {
+                    const active = ponsStock.address === stock.address;
+                    return (
+                      <label
+                        key={stock.address}
+                        className={`launchpad-option${active ? " is-on" : ""}`}
+                      >
+                        <input
+                          type="radio"
+                          name="pons-stock"
+                          checked={active}
+                          onChange={() => setPonsStock(stock)}
+                        />
+                        <span className="chain-check" aria-hidden="true" />
+                        <img
+                          className="launchpad-logo"
+                          src={stock.logo}
+                          alt=""
+                          width={24}
+                          height={24}
+                          loading="lazy"
+                        />
+                        <span className="launchpad-copy">
+                          <b>{stock.symbol}</b>
+                          <span>{stock.name}</span>
+                          <span className="launchpad-chain">
+                            {shortAddress(stock.address)}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
+            ) : null}
 
             <fieldset className="registry-group">
               <legend>
@@ -690,7 +816,10 @@ export default function RegistryActionModal({ address }: Props) {
                 <input
                   type="checkbox"
                   checked={enableAgent}
-                  onChange={(event) => setEnableAgent(event.target.checked)}
+                  onChange={(event) => {
+                    setEnableAgent(event.target.checked);
+                    if (!event.target.checked) setAgentEco(false);
+                  }}
                 />
                 <span className="chain-check" aria-hidden="true" />
                 <span>
@@ -721,6 +850,22 @@ export default function RegistryActionModal({ address }: Props) {
                       API key is never requested or stored in this form.
                     </p>
                   </div>
+                  <label className="registry-toggle">
+                    <input
+                      type="checkbox"
+                      checked={agentEco}
+                      onChange={(event) => setAgentEco(event.target.checked)}
+                    />
+                    <span className="chain-check" aria-hidden="true" />
+                    <span>
+                      <b>🌱 Contribute to Telos Eco</b>
+                      <span>
+                        Opt in to weekly strategy discovery. Your idle agent
+                        shares the results so Telos can avoid duplicate model
+                        calls and save tokens.
+                      </span>
+                    </span>
+                  </label>
                 </div>
               ) : null}
             </div>

@@ -527,6 +527,44 @@ export default function VaultDetailPage({
                     </dd>
                   </div>
                 ) : null}
+                {vault.launchpadStock ? (
+                  <div>
+                    <dt>PONS STOCK PAIR</dt>
+                    <dd className="launchpad-mini">
+                      <img
+                        className="launchpad-logo"
+                        src={vault.launchpadStock.logo}
+                        alt=""
+                        width={18}
+                        height={18}
+                        loading="lazy"
+                      />
+                      {vault.launchpadStock.symbol} ·{" "}
+                      {vault.launchpadStock.name} ·{" "}
+                      {shortAddress(vault.launchpadStock.address)} · rewards in{" "}
+                      {vault.launchpadStock.symbol}
+                    </dd>
+                  </div>
+                ) : null}
+                {vault.launchpadToken ? (
+                  <div>
+                    <dt>HOOKR TOKEN</dt>
+                    <dd className="launchpad-mini">
+                      <img
+                        className="launchpad-logo launchpad-logo--hookr"
+                        src={vault.launchpadToken.logo ?? "/launchpads/hookr.png"}
+                        alt=""
+                        width={18}
+                        height={18}
+                        loading="lazy"
+                      />
+                      {vault.launchpadToken.symbol} · {vault.launchpadToken.name}
+                      {vault.launchpadToken.address
+                        ? ` · ${shortAddress(vault.launchpadToken.address)}`
+                        : ""}
+                    </dd>
+                  </div>
+                ) : null}
                 <div>
                   <dt>CREATOR REWARDS</dt>
                   <dd>{creatorRewardLabel(vault.creatorRewards)}</dd>

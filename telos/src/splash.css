@@ -1,0 +1,171 @@
+/* First-load splash: dark canvas, lime glow, waving Telos flag. */
+.splash-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 26px;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 50% 42%,
+      rgba(168, 230, 0, 0.14),
+      transparent 34%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(255, 255, 255, 0.035),
+      transparent 62%
+    ),
+    #0d0d0d;
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 480ms ease,
+    transform 480ms ease,
+    visibility 480ms ease;
+}
+
+.splash-screen::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    circle at center,
+    transparent 38%,
+    rgba(0, 0, 0, 0.5) 100%
+  );
+}
+
+.splash-screen.is-out {
+  opacity: 0;
+  visibility: hidden;
+  transform: scale(1.045);
+  pointer-events: none;
+}
+
+.splash-halo {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: min(44vw, 310px);
+  height: min(44vw, 310px);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(168, 230, 0, 0.22),
+    rgba(168, 230, 0, 0.04) 48%,
+    transparent 70%
+  );
+  filter: blur(16px);
+  animation: splash-halo 2.6s ease-in-out infinite;
+}
+
+.splash-flag {
+  position: relative;
+  z-index: 1;
+  display: block;
+  font-family:
+    "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: clamp(76px, 15vw, 132px);
+  line-height: 1;
+  transform-origin: 18% 82%;
+  filter:
+    drop-shadow(0 18px 32px rgba(0, 0, 0, 0.5))
+    drop-shadow(0 0 28px rgba(168, 230, 0, 0.22));
+  user-select: none;
+  animation:
+    splash-flag-in 720ms cubic-bezier(0.2, 0.8, 0.2, 1) both,
+    splash-flag-wave 1.8s ease-in-out 720ms infinite;
+}
+
+.splash-bar {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: min(168px, 34vw);
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(226, 226, 226, 0.12);
+}
+
+.splash-bar > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    #a8e600 28%,
+    #dcff85 58%,
+    transparent
+  );
+  transform: translateX(-100%);
+  animation: splash-bar 1.15s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@keyframes splash-flag-in {
+  from {
+    opacity: 0;
+    transform: scale(0.42) rotate(-12deg);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+@keyframes splash-flag-wave {
+  0%,
+  100% {
+    transform: rotate(0deg) translateY(0) scale(1);
+  }
+  25% {
+    transform: rotate(3deg) translateY(-5px) scale(1.02);
+  }
+  50% {
+    transform: rotate(-2deg) translateY(1px) scale(1);
+  }
+  75% {
+    transform: rotate(2deg) translateY(-3px) scale(1.01);
+  }
+}
+
+@keyframes splash-halo {
+  0%,
+  100% {
+    opacity: 0.55;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+@keyframes splash-bar {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .splash-screen {
+    transition-duration: 200ms;
+  }
+
+  .splash-halo,
+  .splash-flag,
+  .splash-bar > span {
+    animation: none;
+  }
+}
