@@ -9,7 +9,8 @@ import { OnchainAgentManager } from "../onchain/OnchainAgentManager";
 import { OnchainExecutor } from "../onchain/OnchainExecutor";
 import { Registry } from "../onchain/Registry";
 import { address } from "../types/solidity-types";
-
+//implementing a singleton patter on shared instance for all classes across all pages
+//they all will change dynamically and adapt to chnges because some classes depend on others
 type SingletonManager = {
   telosAPIInstance: TelosAPI | null;
   modelManagerInstance: ModelManager | null;
@@ -41,6 +42,10 @@ export function TelosSingletonManagerProvider({
       clientEvent();
     }
   }, [wallets]);
+
+  useEffect(() => {
+    instantiateClasses();
+  }, []);
   async function instantiateClasses() {
     const telosAPIInstance: TelosAPI | null = telosAPI();
     const modelManagerInstance = modelsManager();
