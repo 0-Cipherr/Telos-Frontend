@@ -1,12 +1,23 @@
 import { useWallets, UseWalletsInterface } from "@privy-io/react-auth";
 import { createContext, ReactNode, useEffect, useState } from "react";
+import { OpenRouter } from "../../llm/OpenRouter";
 import TelosAPI from "../api-handler/Telos/telos-api-methods";
+import { LaunchPad } from "../interfaces/LaunchPad";
+import LLM from "../interfaces/LLM";
+import { Stripe } from "../microservices/Stripe";
+import { ModelManager } from "../onchain/ModelManager";
+import { OnchainAgentManager } from "../onchain/OnchainAgentManager";
 import { OnchainExecutor } from "../onchain/OnchainExecutor";
+import { Registry } from "../onchain/Registry";
 import { address } from "../types/solidity-types";
-
 type SingletonManager = {
   telosAPIInstance: TelosAPI | null;
+  modelManagerInstance: ModelManager | null;
+  llmInstance: OpenRouter | null;
+  onchainAgentManagerInstance: OnchainAgentManager | null;
   onchainExecutorInstance: OnchainExecutor | null;
+  stripeInstance: Stripe | null;
+  registryInstance: Registry | null;
 };
 //idea proposed managed instance for all of our sclasses accross all pages
 //so all data is on the same page and is effeciently retrieved and used
@@ -26,20 +37,85 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
   }, [wallets]);
   async function instantiateClasses() {
     const telosAPIInstance: TelosAPI | null = telosAPI();
+    const modelManagerInstance = modelsManager();
+    const llmInstance = LLM(
+      "",
+      "",
+      "",
+      telosAPIInstance as TelosAPI,
+      modelManagerInstance,
+    );
+    const onchainAgentManagerInstance: OnchainAgentManager | null =
+      onchainAgentManager(llmInstance as LLM);
     const onchainExecutorInstance: OnchainExecutor | null = onchainExecutor();
-
+    const stripeInstance: Stripe | null = stripe();
+    const registryInstance: Registry | null = registry();
     setSingleton({
       telosAPIInstance,
+      modelManagerInstance,
+      llmInstance,
+      onchainAgentManagerInstance,
       onchainExecutorInstance,
+      stripeInstance,
+      registryInstance,
     });
+  }
+  function onchainAgentManager(_llm: LLM): OnchainAgentManager | null {
+    return new OnchainAgentManager(_llm);
+  }
+
+  function modelsManager(): ModelManager {
+    return new ModelManager();
   }
 
   function telosAPI(): TelosAPI | null {
     return new TelosAPI("", "", ""); //initialize ke empty then when ser connect wallet we generate api key
   }
 
+  function registry(
+    _registry: `0x${string}`,
+    _protocolFeeReciever: any,
+    _protocolFee: any,
+    _endpoint: any,
+    _agentManager: OnchainAgentManager,
+    _onchainExecutor: OnchainExecutor,
+    _telosAPI: TelosAPI,
+  ): Registry {
+    return new Registry(
+      _registry,
+      _protocolFeeReciever,
+      _protocolFee,
+      _endpoint,
+      _agentManager,
+      _onchainExecutor,
+      _telosAPI,
+    );
+  }
+
+  function LLM(
+    _apiKey: any,
+    _model: any,
+    _managementKey: any,
+    _telos: TelosAPI,
+    _models: ModelManager,
+  ): OpenRouter | null {
+    return new OpenRouter(_apiKey, _model, _managementKey, _telos, _models);
+  }
+
   function onchainExecutor(): OnchainExecutor | null {
     return new OnchainExecutor();
+  }
+
+  function stripe() {
+    return new Stripe();
+  }
+
+  function launchpads() {
+    try {
+      const launcpads: Map<string, LaunchPad> = new Map();
+    } catch (error) {
+      console.log(error);
+    }
   }
 
   async function reinstantiateClasses() {}
