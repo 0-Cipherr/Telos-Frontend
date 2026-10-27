@@ -4,12 +4,15 @@ import { OpenRouter } from "../../llm/OpenRouter";
 import TelosAPI from "../api-handler/Telos/telos-api-methods";
 import { LaunchPad } from "../interfaces/LaunchPad";
 import LLM from "../interfaces/LLM";
+import { HookrFun } from "../Launchpads/HookrFun";
+import { Pons } from "../Launchpads/Pons";
 import { Stripe } from "../microservices/Stripe";
 import { ModelManager } from "../onchain/ModelManager";
 import { OnchainAgentManager } from "../onchain/OnchainAgentManager";
 import { OnchainExecutor } from "../onchain/OnchainExecutor";
 import { Registry } from "../onchain/Registry";
 import { address } from "../types/solidity-types";
+
 type SingletonManager = {
   telosAPIInstance: TelosAPI | null;
   modelManagerInstance: ModelManager | null;
@@ -49,7 +52,15 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
       onchainAgentManager(llmInstance as LLM);
     const onchainExecutorInstance: OnchainExecutor | null = onchainExecutor();
     const stripeInstance: Stripe | null = stripe();
-    const registryInstance: Registry | null = registry();
+    const registryInstance: Registry | null = registry(
+      "" as address,
+      "",
+      "",
+      "",
+      onchainAgentManagerInstance as OnchainAgentManager,
+      onchainExecutorInstance as OnchainExecutor,
+      telosAPIInstance as TelosAPI,
+    );
     setSingleton({
       telosAPIInstance,
       modelManagerInstance,
@@ -112,7 +123,9 @@ export function telosSingletonManager({ children }: { children: ReactNode }) {
 
   function launchpads() {
     try {
-      const launcpads: Map<string, LaunchPad> = new Map();
+      const launcpads: Map<string, LaunchPad> = new Map<string, LaunchPad>();
+      launchpads.set("pons", new Pons());
+      launchpads.set("hoookrfun", new HookrFun());
     } catch (error) {
       console.log(error);
     }
