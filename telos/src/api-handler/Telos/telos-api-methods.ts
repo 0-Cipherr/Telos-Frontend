@@ -14,15 +14,54 @@ class TelosAPI {
     };
   }
 
-  async uploadVault(params: any[]): Promise<any[] | null> {
+  async generateAPIKey() {
     try {
-      const authParam = this.getAuthParam();
+      const creatorInfo = {};
+      const result = await this.executeFetch(
+        creatorInfo,
+        this.endpoints.uploadCreator,
+        "POST",
+      );
+      return result || null;
+    } catch (error) {
+      console.log(error);
+    }
+  }
+
+  async updateMarketPlaceMetrics() {
+    try {
+    } catch (error) {}
+  }
+
+  //flow beofre doing anything we must make sure we have all three values set key we need to add
+  //framework to generate api keys
+
+  async uploadCreator(creator: any[]): Promise<any | null> {
+    try {
+      const authParam: any = this.getAuthParam();
+      authParam.creator = creator;
+      const result = await this.executeFetch(
+        authParam,
+        this.endpoints.uploadCreator,
+        "POST",
+      );
+      return result || null;
+    } catch (error) {
+      console.log(error);
+      return null;
+    }
+  }
+  async uploadVault(vault: any[]): Promise<any[] | null> {
+    try {
+      const authParam: any = this.getAuthParam();
+
+      authParam.vault = vault;
       const result = await this.executeFetch(
         authParam,
         this.endpoints.updloadVaults,
         "POST",
       );
-      return result;
+      return result || null;
     } catch (error) {
       console.log(error);
 
@@ -30,12 +69,23 @@ class TelosAPI {
     }
   }
 
-  async uploadAgent(_agentInfo: any) {
+  async uploadAgent(agent: any[]): Promise<any | null> {
     try {
-      const stringifiedAgent = JSON.stringify(_agentInfo);
-    } catch (error) {}
+      const authParam: any = this.getAuthParam();
+
+      authParam.agent = agent;
+      const result = await this.executeFetch(
+        authParam,
+        this.endpoints.updloadVaults,
+        "POST",
+      );
+      return result || null;
+    } catch (error) {
+      console.log(error);
+      return null;
+    }
   }
-  async allVaults() {
+  async allVaults(): Promise<any | null> {
     try {
       const authParam = this.getAuthParam();
       const vaultsFound: any[] = await this.executeFetch(
@@ -43,10 +93,10 @@ class TelosAPI {
         this.endpoints.allVaults,
         "GET",
       );
-      return vaultsFound || [];
+      return vaultsFound || null;
     } catch (error) {
       console.log(error);
-      return [];
+      return null;
     }
   }
 

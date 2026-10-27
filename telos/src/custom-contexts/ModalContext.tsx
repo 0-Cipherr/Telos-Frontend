@@ -164,7 +164,8 @@ export function RegistryActionModalProvider({
           encodedParams, //should be encoded depoy params
           enableAgent,
         );
-      // await createToken("");
+      // await createToken("")
+
       return reciept;
     } catch (error) {
       console.log(error);
