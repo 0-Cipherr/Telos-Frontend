@@ -1,5 +1,5 @@
 import { PrivyProvider } from "@privy-io/react-auth";
-import { StrictMode, useContext, type ReactNode } from "react";
+import { StrictMode, useEffect, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import App, { PreviewApp } from "./App";
@@ -9,8 +9,8 @@ import { DeedMarketProvider } from "./custom-contexts/DeedMarketContext";
 import { RegistryActionModalProvider } from "./custom-contexts/ModalContext";
 import { StrategyLauncherProvider } from "./custom-contexts/StrategyLauncherContext";
 import {
-  TelosSingletonContext,
   TelosSingletonManagerProvider,
+  useSingletonManager,
 } from "./custom-contexts/TelosSingletonContext";
 import { TxConfirmerProvider } from "./custom-contexts/TxConfirmerContext";
 import "./deeds.css";
@@ -41,56 +41,59 @@ const previewReason: "missing" | "insecure" | null = missing
     ? "insecure"
     : null;
 
-const singletonContext = useContext(TelosSingletonContext);
-
 // Keep the app-level contexts inside PrivyProvider so hooks such as
 // `useWallets` can see the connected wallet. The strategy launcher wraps the
 // router tree so the agent is available on every page.
 function Providers({ children }: { children: ReactNode }) {
+  const { singleton, instantiateClasses }: any = useSingletonManager();
+
+  useEffect(() => {
+    instantiateClasses();
+  }, []);
   return (
-    <TelosSingletonManagerProvider>
-      <CreatedVaultsProvider>
-        <DeedMarketProvider>
-          <TxConfirmerProvider>
-            <RegistryActionModalProvider
-              registry={singletonContext?.registryInstance}
-              launchPads={singletonContext.launchpadsInstance}
-            >
-              <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
-            </RegistryActionModalProvider>
-          </TxConfirmerProvider>
-        </DeedMarketProvider>
-      </CreatedVaultsProvider>
-    </TelosSingletonManagerProvider>
+    <CreatedVaultsProvider>
+      <DeedMarketProvider>
+        <TxConfirmerProvider>
+          <RegistryActionModalProvider
+            registry={singleton?.registryInstance}
+            launchPads={singleton?.launchpadsInstance}
+          >
+            <StrategyLauncherProvider>{children}</StrategyLauncherProvider>
+          </RegistryActionModalProvider>
+        </TxConfirmerProvider>
+      </DeedMarketProvider>
+    </CreatedVaultsProvider>
   );
 }
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <SplashScreen />
-    <BrowserRouter>
-      {previewReason ? (
-        <Providers>
-          <PreviewApp reason={previewReason} />
-        </Providers>
-      ) : (
-        <PrivyProvider
-          appId={appId as string}
-          config={{
-            loginMethods: ["wallet", "sms"],
-            appearance: {
-              theme: "#f1f1ea",
-              accentColor: "#8fd400",
-              showWalletLoginFirst: true,
-              logo: "/icon.svg",
-            },
-          }}
-        >
+    <TelosSingletonManagerProvider>
+      <SplashScreen />
+      <BrowserRouter>
+        {previewReason ? (
           <Providers>
-            <App />
+            <PreviewApp reason={previewReason} />
           </Providers>
-        </PrivyProvider>
-      )}
-    </BrowserRouter>
+        ) : (
+          <PrivyProvider
+            appId={appId as string}
+            config={{
+              loginMethods: ["wallet", "sms"],
+              appearance: {
+                theme: "#f1f1ea",
+                accentColor: "#8fd400",
+                showWalletLoginFirst: true,
+                logo: "/icon.svg",
+              },
+            }}
+          >
+            <Providers>
+              <App />
+            </Providers>
+          </PrivyProvider>
+        )}
+      </BrowserRouter>
+    </TelosSingletonManagerProvider>
   </StrictMode>,
 );

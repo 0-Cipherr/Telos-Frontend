@@ -1,7 +1,7 @@
 import { useState } from "react";
+import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import type { Vault } from "../vaults";
 import { ASSETS, CHAINS, STRATS } from "../vaults";
-import { useRegistryActionModal } from "../custom-contexts/ModalContext";
 import { VaultPreview } from "./VaultTable";
 
 type LaunchFormProps = {
@@ -13,7 +13,7 @@ export default function LaunchForm({ address }: LaunchFormProps) {
   const [asset, setAsset] = useState("USDC");
   const [chain, setChain] = useState("Base");
   const [strategy, setStrategy] = useState("Lending");
-  const [fee, setFee] = useState(8);
+  const [fee, setFee] = useState<any>(8);
 
   const {
     setOpen,
@@ -25,9 +25,7 @@ export default function LaunchForm({ address }: LaunchFormProps) {
     setStrategy: setRegistryStrategy,
   } = useRegistryActionModal();
 
-  const short = address
-    ? `${address.slice(0, 6)}…${address.slice(-4)}`
-    : "you";
+  const short = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "you";
 
   const preview: Vault = {
     id: "TL-DRAFT",

@@ -1,5 +1,11 @@
 import { useWallets, UseWalletsInterface } from "@privy-io/react-auth";
-import { createContext, ReactNode, useEffect, useState } from "react";
+import {
+  createContext,
+  ReactNode,
+  useContext,
+  useEffect,
+  useState,
+} from "react";
 import { OpenRouter } from "../../llm/OpenRouter";
 import TelosAPI from "../api-handler/Telos/telos-api-methods";
 import LLM from "../interfaces/LLM";
@@ -22,9 +28,7 @@ type SingletonManager = {
 };
 //idea proposed managed instance for all of our sclasses accross all pages
 //so all data is on the same page and is effeciently retrieved and used
-export const TelosSingletonContext = createContext<any | null>(
-  TelosSingletonManagerProvider,
-);
+export const TelosSingletonContext = createContext<any | null>(null);
 
 export function TelosSingletonManagerProvider({
   children,
@@ -43,9 +47,6 @@ export function TelosSingletonManagerProvider({
     }
   }, [wallets]);
 
-  useEffect(() => {
-    instantiateClasses();
-  }, []);
   async function instantiateClasses() {
     const telosAPIInstance: TelosAPI | null = telosAPI();
     const modelManagerInstance = modelsManager();
@@ -164,9 +165,19 @@ export function TelosSingletonManagerProvider({
     <TelosSingletonContext.Provider
       value={{
         singleton,
+        instantiateClasses,
       }}
     >
       {children}
     </TelosSingletonContext.Provider>
   );
+}
+export function useSingletonManager() {
+  const context = useContext(TelosSingletonContext);
+  if (!context) {
+    throw new Error(
+      "useSingletonManager must be used within a TelosSingletonManagerProvider",
+    );
+  }
+  return context;
 }
