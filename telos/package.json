@@ -12,17 +12,9 @@
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.50.0",
-    "@solana-program/memo": "^0.16.0",
-    "@solana-program/system": "^0.16.0",
-    "@solana-program/token": "^0.18.0",
-    "@solana/kit": "^8.6.0",
     "@web3icons/react": "^4.1.24",
-    "bullmq": "^6.4.2",
-    "class-transformer": "^0.5.1",
-    "hookr-sdk": "^1.1.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "react-router": "^8.5.0",
     "react-router-dom": "^7.18.4",
     "viem": "^2.56.5"
   },

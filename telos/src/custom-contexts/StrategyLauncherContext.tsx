@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- context, provider and hook share one module; Fast Refresh just reloads these files fully. */
 import {
   createContext,
   useCallback,
@@ -9,7 +10,6 @@ import {
 import CreateStrategyModal from "../components/CreateStrategyModal";
 import StrategyChatModal from "../components/StrategyChatModal";
 import type { StrategySpec } from "../strategies/strategy-standard";
-import { useRegistryActionModal } from "./ModalContext";
 
 type StrategyLauncherContextValue = {
   open: boolean;
@@ -21,68 +21,29 @@ const StrategyLauncherContext =
   createContext<StrategyLauncherContextValue | null>(null);
 
 /**
- * Mounts the strategy lab and the create-strategy verification dialog once for
- * the whole app.
- *
- * The chat never opens the create-vault dialog directly. Its output goes to the
- * create-strategy modal first, where the contract is verified and registered.
- * Only then can the user choose to open create-vault with that strategy.
+ * Mounts the strategy chat and the review-and-deploy dialog once for the whole
+ * app. The chat hands its draft to the review dialog, which deploys it.
  */
 export function StrategyLauncherProvider({ children }: { children: ReactNode }) {
   const [open, setOpen] = useState(false);
-  const [strategyOpen, setStrategyOpen] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const [pendingSpec, setPendingSpec] = useState<StrategySpec | null>(null);
-  const {
-    setOpen: setCreateOpen,
-    setStrategy,
-    setStrategySpec,
-    setVaultName,
-    setVaultTicker,
-    setVaultDescription,
-    setVaultChains,
-    setVaultFee,
-  } = useRegistryActionModal();
+  // Bumping the key remounts the review dialog, so every review starts clean.
+  const [reviewKey, setReviewKey] = useState(0);
 
   const openStrategy = useCallback(() => {
-    setStrategyOpen(false);
+    setReviewOpen(false);
     setOpen(true);
   }, []);
   const closeStrategy = useCallback(() => setOpen(false), []);
-  const closeCreateStrategy = useCallback(() => setStrategyOpen(false), []);
+  const closeReview = useCallback(() => setReviewOpen(false), []);
 
   const handleUseStrategy = useCallback((spec: StrategySpec) => {
-    // 1. Keep the exact contract produced by the agent.
     setPendingSpec(spec);
-    // 2. Close the chat and open the separate create-strategy modal.
+    setReviewKey((key) => key + 1);
     setOpen(false);
-    setStrategyOpen(true);
+    setReviewOpen(true);
   }, []);
-
-  const handleCreateVault = useCallback(
-    (spec: StrategySpec) => {
-      // Attach the verified contract and pre-fill the create-vault form.
-      setStrategy(spec.code || spec.prompt);
-      setStrategySpec(spec);
-      setVaultName(spec.name);
-      setVaultTicker(spec.ticker);
-      setVaultDescription(spec.thesis);
-      setVaultChains(spec.chain ? [spec.chain] : ["Base"]);
-      setVaultFee(spec.fee);
-
-      setStrategyOpen(false);
-      setCreateOpen(true);
-    },
-    [
-      setCreateOpen,
-      setStrategy,
-      setStrategySpec,
-      setVaultChains,
-      setVaultDescription,
-      setVaultFee,
-      setVaultName,
-      setVaultTicker,
-    ],
-  );
 
   const value = useMemo(
     () => ({ open, openStrategy, closeStrategy }),
@@ -98,10 +59,10 @@ export function StrategyLauncherProvider({ children }: { children: ReactNode }) 
         onUseStrategy={handleUseStrategy}
       />
       <CreateStrategyModal
-        open={strategyOpen}
+        key={reviewKey}
+        open={reviewOpen}
         spec={pendingSpec}
-        onClose={closeCreateStrategy}
-        onCreateVault={handleCreateVault}
+        onClose={closeReview}
         onOpenChat={openStrategy}
       />
     </StrategyLauncherContext.Provider>

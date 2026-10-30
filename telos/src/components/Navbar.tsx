@@ -14,10 +14,9 @@ type NavbarProps = {
 
 const LINKS = [
   { to: "/vaults", label: "Vaults", index: "01" },
-  { to: "/deeds", label: "Deeds", index: "02" },
-  { to: "/forums", label: "AI Forums", index: "03" },
-  { to: "/#calculator", label: "Calculator", index: "04" },
-  { to: "/#how", label: "How it works", index: "05" },
+  { to: "/strategies", label: "Strategies", index: "02" },
+  { to: "/#calculator", label: "Calculator", index: "03" },
+  { to: "/#how", label: "How it works", index: "04" },
 ];
 
 export default function Navbar({
@@ -55,10 +54,8 @@ export default function Navbar({
             const active =
               (link.to === "/vaults" &&
                 location.pathname.startsWith("/vaults")) ||
-              (link.to === "/deeds" &&
-                location.pathname.startsWith("/deeds")) ||
-              (link.to === "/forums" &&
-                location.pathname.startsWith("/forums"));
+              (link.to === "/strategies" &&
+                location.pathname.startsWith("/strategies"));
             return (
               <span className="toplink-wrap" key={link.to}>
                 <Link

@@ -195,9 +195,9 @@ export default function VaultsPage({
             <button
               type="button"
               className="btn btn-plain"
-              onClick={() => navigate("/forums")}
+              onClick={() => navigate("/strategies")}
             >
-              ✦ Read AI theses
+              ✦ Browse strategies
             </button>
             <button
               type="button"
@@ -262,7 +262,7 @@ export default function VaultsPage({
         <section className="section" aria-labelledby="vault-index-heading">
           <div className="section-title">
             <h2 id="vault-index-heading">Registry</h2>
-            <span className="sample-tag">SAMPLE DATA</span>
+            <span className="sample-tag">TESTNET</span>
           </div>
 
           <div className="vault-index-controls">

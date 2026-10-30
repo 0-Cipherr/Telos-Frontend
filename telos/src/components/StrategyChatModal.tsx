@@ -1,13 +1,5 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type FormEvent,
-  type ReactNode,
-} from "react";
-import { CHAIN_ALIAS_PATTERN, normalizeChain } from "../chains";
-import { lockBodyScroll } from "../utils/scrollLock";
-import { buildLocalContract } from "../strategies/local-contract";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { getTelosApiKey } from "../api-handler/Telos/telos-session";
 import {
   auditStatusLabel,
   blockingFindings,
@@ -28,7 +20,7 @@ import {
   wantsCompileRequest,
   type StrategySpec,
 } from "../strategies/strategy-standard";
-import { loadSavedStrategies } from "../strategies/strategy-store";
+import { lockBodyScroll } from "../utils/scrollLock";
 
 export type { StrategySpec } from "../strategies/strategy-standard";
 
@@ -48,312 +40,39 @@ type Message = {
   sources?: Source[];
 };
 
-type Draft = {
-  goal?: string;
-  asset?: string;
-  chain?: string;
-  risk?: "LOW" | "MED" | "HIGH";
-  fee?: number;
-  protocol?: string;
-};
-
 type StrategyChatModalProps = {
   open: boolean;
   onClose: () => void;
   onUseStrategy: (spec: StrategySpec) => void;
 };
 
-const KEY_STORAGE = "telos.llm.key";
-const MODEL_STORAGE = "telos.llm.model";
-const WEB_STORAGE = "telos.llm.web";
-const DEFAULT_MODEL = "openai/gpt-4o-mini";
-// Dev/preview server proxy (see vite.config.ts). Keeps the API key server-side
-// so the lab is usable without any login/paste-a-key step.
+// The chat always goes through the Telos API, which checks the wallet-issued
+// Telos key and holds the OpenRouter secret. Users never paste a provider key.
 const PROXY_URL = `${(import.meta.env.VITE_TELOS_API_BASE as string | undefined) ?? ""}/api/chat`;
-const DIRECT_URL = "https://openrouter.ai/api/v1/chat/completions";
-// Free OpenRouter models queue before the first token, so be patient. The
-// strongest free coder model takes ~40s for a full contract. The modal still
-// shows a "computing" indicator while it waits.
+// Free OpenRouter models queue before the first token, so be patient.
 const FIRST_TOKEN_TIMEOUT_MS = 90_000;
 const HARD_TIMEOUT_MS = 300_000;
 // Once tokens are flowing, a long silence almost always means the upstream
 // stream died. Abort instead of leaving the bubble stuck on "drafting…".
 const STREAM_IDLE_TIMEOUT_MS = 60_000;
+const AUDIT_TIMEOUT_MS = 200_000;
 const MAX_REPAIRS = 2;
 // Free models sometimes echo the request instead of compiling. One strict
 // nudge is usually enough to get back on format.
 const NO_CONTRACT_PROMPT = `The user asked you to compile a strategy, but your last reply did not contain a Solidity contract. Do not repeat the request or apologize. If a required fact is genuinely missing, ask exactly ONE short question. Otherwise emit the strategy now: one short sentence, then one fenced json block with every field (name, ticker, asset, chain, risk, fee, thesis, allocations, guardrails, contract) where contract is the COMPLETE Solidity file as a JSON string.`;
-const AUDIT_TIMEOUT_MS = 200_000;
 
 const WELCOME =
-  "hey — i'm strategist, your telos strategy copilot. we can talk through an idea, compare venues, look up current protocol data on the web, or compile a real IStrategy contract when you're ready. nothing gets registered until it passes verification in the strategy modal.";
+  "hey — i'm strategist, the telos strategy copilot. we can talk through an idea, compare venues, look up current yields, or compile a real IStrategy contract. deposits settle on Robinhood Testnet and a strategy can earn on any supported chain. when a draft is ready, deploy it and it lists on the strategies page.";
 
 const WELCOME_CHIPS = [
-  "USDC lending on Base, low risk",
-  "Delta-neutral USDC on Arbitrum",
+  "Compile a low-risk USDC lending strategy on Base",
+  "Best stable yields across chains right now",
   "Explain funding carry vs lending",
-  "What's the current ETH price?",
-  "🎲 surprise me",
+  "Compare lending vs LP",
 ];
 
-function readStorage(key: string, fallback: string): string {
-  try {
-    return window.localStorage.getItem(key) ?? fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-function writeStorage(key: string, value: string) {
-  try {
-    if (value) window.localStorage.setItem(key, value);
-    else window.localStorage.removeItem(key);
-  } catch {
-    /* localStorage can be unavailable; the lab still works for this session. */
-  }
-}
-
-function extractDraft(text: string, previous: Draft): Draft {
-  const next: Draft = { ...previous };
-  const lower = text.toLowerCase();
-
-  const asset = lower.match(/\b(usdc|usdt|dai|weth|eth|wbtc|btc|sol)\b/)?.[1];
-  if (asset) {
-    next.asset =
-      asset === "eth" ? "WETH" : asset === "btc" ? "WBTC" : asset.toUpperCase();
-  }
-
-  const chain = lower.match(CHAIN_ALIAS_PATTERN)?.[1];
-  if (chain) next.chain = normalizeChain(chain, "Base");
-
-  if (/\b(low|safe|stable|conservative|chill|careful)\b/.test(lower)) {
-    next.risk = "LOW";
-  } else if (/\b(high|degen|aggressive|spicy|ape|maxi|turbo)\b/.test(lower)) {
-    next.risk = "HIGH";
-  } else if (/\b(med|medium|balanced|moderate|mid)\b/.test(lower)) {
-    next.risk = "MED";
-  }
-
-  const fee = lower.match(/\b(\d{1,2})\s*%/);
-  if (fee) next.fee = Math.max(0, Math.min(8, Number(fee[1])));
-
-  const protocol = lower.match(
-    /\b(aave|morpho|aerodrome|pendle|gmx|uniswap|curve)\b/,
-  )?.[1];
-  if (protocol) {
-    next.protocol = protocol.charAt(0).toUpperCase() + protocol.slice(1);
-  }
-
-  if (/delta|neutral|hedg|basis/.test(lower)) {
-    next.goal = "Delta-neutral";
-  } else if (/stable|yield|lend|tbill|t-bill|savings/.test(lower)) {
-    next.goal = "Stable yield";
-  } else if (/momentum|trend|breakout|eth\b|weth\b/.test(lower)) {
-    next.goal = "Momentum";
-  } else if (/\blp\b|liquidity|pool|farm/.test(lower)) {
-    next.goal = "LP fees";
-  } else if (text.trim().length > 12) {
-    next.goal = "Balanced yield";
-  }
-
-  return next;
-}
-
-function nextQuestion(draft: Draft): { text: string; chips: string[] } | null {
-  if (!draft.goal) {
-    return {
-      text: "what's the play? i can also just pick something sensible if you say surprise me.",
-      chips: [
-        "Stable yield",
-        "Delta-neutral",
-        "ETH momentum",
-        "LP fees",
-        "🎲 surprise me",
-      ],
-    };
-  }
-  if (!draft.risk) {
-    return {
-      text: "how spicy are we going? say 'defaults' and i'll use balanced risk.",
-      chips: ["Low risk", "Balanced", "Degen", "Use defaults"],
-    };
-  }
-  if (!draft.chain) {
-    return {
-      text: "which chain should the strategy target? (deposits still settle on Robinhood Testnet)",
-      chips: ["Base", "Arbitrum", "Ethereum", "Robinhood Testnet", "Use defaults"],
-    };
-  }
-  if (!draft.asset) {
-    return {
-      text: "what asset should it hold?",
-      chips: ["USDC", "WETH", "DAI", "WBTC", "Use defaults"],
-    };
-  }
-  return null;
-}
-
-function pick<T>(items: T[], seed: string): T {
-  let total = 0;
-  for (let i = 0; i < seed.length; i += 1) total += seed.charCodeAt(i);
-  return items[total % items.length];
-}
-
-function buildStrategy(input: Draft): StrategySpec {
-  const goal = input.goal ?? "Balanced yield";
-  const asset = input.asset ?? "USDC";
-  const chain = normalizeChain(input.chain ?? "Base", "Base");
-  const risk = input.risk ?? "MED";
-  const fee = input.fee ?? 5;
-
-  const lending = "Aave v3";
-  const lp =
-    chain === "Base"
-      ? "Aerodrome"
-      : chain === "Arbitrum"
-        ? "Camelot"
-        : "Uniswap v3";
-  const hedge =
-    chain === "Base"
-      ? "Pendle"
-      : chain === "Arbitrum"
-        ? "GMX"
-        : "Pendle";
-  const protocol = input.protocol;
-  const pair =
-    asset === "USDC" || asset === "USDT" || asset === "DAI"
-      ? "USDC/USDT"
-      : `${asset}/USDC`;
-
-  const sleeve =
-    protocol && protocol !== "Any"
-      ? protocol
-      : /stable|delta/i.test(goal)
-        ? lending
-        : /lp/i.test(goal)
-          ? lp
-          : hedge;
-
-  let allocations: { label: string; pct: number }[];
-  if (/delta/i.test(goal)) {
-    allocations = [
-      { label: `${lending} — ${asset} lending base`, pct: 50 },
-      { label: `${hedge} — fixed-yield hedge`, pct: 30 },
-      { label: "Stable buffer / dry powder", pct: 20 },
-    ];
-  } else if (/stable/i.test(goal)) {
-    allocations =
-      risk === "LOW"
-        ? [
-            { label: `${sleeve} — ${asset} lending`, pct: 75 },
-            { label: `${lp} — ${pair} pool`, pct: 25 },
-          ]
-        : [
-            { label: `${sleeve} — ${asset} lending`, pct: 55 },
-            { label: `${lp} — ${pair} pool`, pct: 35 },
-            { label: "Stable buffer / dry powder", pct: 10 },
-          ];
-  } else if (/lp/i.test(goal)) {
-    allocations = [
-      { label: `${sleeve} — concentrated ${asset} LP`, pct: risk === "HIGH" ? 60 : 40 },
-      { label: `${lending} — lending sleeve`, pct: risk === "HIGH" ? 20 : 45 },
-      { label: "Stable buffer / dry powder", pct: risk === "HIGH" ? 20 : 15 },
-    ];
-  } else {
-    allocations = [
-      { label: `${sleeve} — ${asset} momentum leg`, pct: risk === "HIGH" ? 55 : 35 },
-      { label: `${lending} — collateral yield`, pct: risk === "HIGH" ? 25 : 45 },
-      { label: "Stable buffer / dry powder", pct: risk === "HIGH" ? 20 : 20 },
-    ];
-  }
-
-  const bases: Record<string, string[]> = {
-    "Stable yield": ["Steady Stack", "Boring Alpha", "T-Bill Maxi"],
-    "Delta-neutral": ["Delta Shield", "Neutral Zone", "Basis Bandit"],
-    Momentum: ["Momentum Rig", "Trend Surfer", "Turbo Trend"],
-    "LP fees": ["LP Machine", "Pool Party", "Fee Farmer"],
-    "Balanced yield": ["Balanced Beam", "Yield Mixer", "Middle Path"],
-  };
-  const name = `${asset} ${pick(bases[goal] ?? bases["Balanced yield"], goal + asset)}`;
-  const ticker = `${asset.slice(0, 3)}X`.toUpperCase().slice(0, 8);
-
-  const riskLine =
-    risk === "LOW"
-      ? "capital preservation first"
-      : risk === "MED"
-        ? "risk-adjusted yield"
-        : "maximum yield, maximum sweat";
-
-  const thesis = `${goal} sleeve on ${chain}, chasing ${riskLine}. Rotates into ${lp} when lending APR compresses. Testnet draft — not financial advice.`;
-
-  const guardrails = [
-    "Creator fee hard-capped at 8%.",
-    risk === "HIGH"
-      ? "Max 2x leverage; auto-deleverage at 15% drawdown."
-      : "No leverage above 1.25x.",
-    `Rebalance monthly or on ${risk === "HIGH" ? "3%" : "5%"} allocation drift.`,
-    "Pause deposits if oracle staleness exceeds 15 minutes.",
-    "Withdraw-only mode if TVL drops 30% in 24 hours.",
-  ];
-
-  const prompt = [
-    `TELOS STRATEGY SPEC — ${name} (${ticker})`,
-    `Chain: ${chain} (EVM)`,
-    `Asset: ${asset}`,
-    `Risk: ${risk}`,
-    `Creator fee: ${fee}%`,
-    "Allocations:",
-    ...allocations.map((item) => `- ${item.pct}% ${item.label}`),
-    "Guardrails:",
-    ...guardrails.map((item) => `- ${item}`),
-    `Thesis: ${thesis}`,
-  ].join("\n");
-
-  // The local engine always ships a contract. It is intentionally a simple
-  // idle-asset adapter, clearly marked as unaudited in the UI.
-  const local = buildLocalContract({ name, asset, chain, risk, thesis });
-  const code = local.code;
-
-  return {
-    name,
-    ticker,
-    asset,
-    chain,
-    risk,
-    fee,
-    thesis,
-    allocations,
-    guardrails,
-    prompt,
-    code,
-    source: "local",
-    model: "telos-local",
-    validation: validateStrategySource(code),
-    audit: {
-      status: "unavailable",
-      findings: [],
-      engine: "telos local template",
-      error: "LLM offline — deterministic IStrategy template, not audited",
-      checkedAt: Date.now(),
-    },
-  };
-}
-
-const RANDOM_DRAFTS: Draft[] = [
-  { goal: "Stable yield", risk: "LOW", chain: "Base", asset: "USDC", fee: 5, protocol: "Morpho" },
-  { goal: "Delta-neutral", risk: "MED", chain: "Arbitrum", asset: "USDC", fee: 8, protocol: "Pendle" },
-  { goal: "Momentum", risk: "HIGH", chain: "Ethereum", asset: "WETH", fee: 8, protocol: "Aave" },
-  { goal: "LP fees", risk: "MED", chain: "Base", asset: "WETH", fee: 5, protocol: "Aerodrome" },
-  { goal: "LP fees", risk: "MED", chain: "Optimism", asset: "USDC", fee: 6, protocol: "Uniswap" },
-  { goal: "Stable yield", risk: "LOW", chain: "Telos", asset: "USDC", fee: 6, protocol: "Telos" },
-];
-
-// The model streams prose first, then the strategy JSON object. Showing the
-// JSON/code as it arrives looks broken, so only prose is rendered live.
-
-function formatCount(count: number): string {
-  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
-}
+const NEEDS_WALLET =
+  "connect your wallet (top right) to use the strategist. your Telos key is issued on first connect, so there is nothing to paste.";
 
 // The web plugin runs one search per request, so only pay for it when the
 // question is about something that can change (or the user explicitly asks).
@@ -362,6 +81,18 @@ const WEB_SEARCH_HINTS =
 
 function needsWebSearch(text: string): boolean {
   return WEB_SEARCH_HINTS.test(text);
+}
+
+function formatCount(count: number): string {
+  return count >= 1000 ? `${(count / 1000).toFixed(1)}k` : String(count);
+}
+
+function authHeaders(): Record<string, string> {
+  const key = getTelosApiKey();
+  return {
+    "Content-Type": "application/json",
+    ...(key ? { Authorization: `Bearer ${key}` } : {}),
+  };
 }
 
 /** Providers sometimes stream content as parts instead of a plain string. */
@@ -382,8 +113,7 @@ function readSources(value: unknown): Source[] {
   const found: Source[] = [];
   for (const item of value) {
     if (!item || typeof item !== "object") continue;
-    const citation = (item as { url_citation?: { url?: unknown; title?: unknown } })
-      .url_citation;
+    const citation = (item as { url_citation?: { url?: unknown; title?: unknown } }).url_citation;
     if (!citation || typeof citation.url !== "string") continue;
     found.push({
       url: citation.url,
@@ -437,53 +167,35 @@ function describeHttpError(status: number, detail: string): string {
   const dailyLimit = /free-models-per-day/i.test(detail);
   const hint =
     status === 401
-      ? "openrouter rejected the key"
+      ? "wallet session expired — reconnect your wallet"
       : status === 402
-        ? "openrouter credits exhausted"
+        ? "strategist credits exhausted"
         : status === 404
           ? "model id not found"
           : status === 429
             ? dailyLimit
-              ? "free-model daily limit reached (50/day without credits) — add credits or retry after the reset"
-              : "rate limited — free models queue hard, try again in a few seconds"
+              ? "free-model daily limit reached — try again after the reset"
+              : "rate limited — try again in a few seconds"
             : status === 503
-              ? "no server-side key on the dev proxy"
+              ? "strategist is not configured on the server"
               : status >= 500
-                ? "provider hiccup on openrouter's side"
+                ? "provider hiccup on the strategist side"
                 : "request failed";
   const trimmed = extra.replace(/\s+/g, " ").trim().slice(0, 140);
   return `${hint} (${status})${trimmed ? ` — ${trimmed}` : ""}`;
 }
 
-export default function StrategyChatModal({
-  open,
-  onClose,
-  onUseStrategy,
-}: StrategyChatModalProps) {
+export default function StrategyChatModal({ open, onClose, onUseStrategy }: StrategyChatModalProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [typing, setTyping] = useState(false);
-  const [apiKey, setApiKey] = useState(() => readStorage(KEY_STORAGE, ""));
-  const [keyDraft, setKeyDraft] = useState(() => readStorage(KEY_STORAGE, ""));
-  const [model, setModel] = useState(() => readStorage(MODEL_STORAGE, DEFAULT_MODEL));
-  const [webSearch, setWebSearch] = useState(
-    () => readStorage(WEB_STORAGE, "1") !== "0",
-  );
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [server, setServer] = useState<{
-    checked: boolean;
-    ready: boolean;
-    model?: string;
-  }>({ checked: false, ready: false });
-  const [savedCount, setSavedCount] = useState(0);
-  const [copied, setCopied] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const [thinkingTokens, setThinkingTokens] = useState(0);
   const [draftingChars, setDraftingChars] = useState(0);
   const [webActive, setWebActive] = useState(false);
   const [auditing, setAuditing] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
 
-  const draftRef = useRef<Draft>({});
   const historyRef = useRef<{ role: "user" | "assistant"; content: string }[]>([]);
   const seededRef = useRef(false);
   const idRef = useRef(0);
@@ -498,49 +210,8 @@ export default function StrategyChatModal({
   const endRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
-  const llmReady = apiKey.trim().length > 8;
-  // Prefer the user's own key when present. Otherwise always try the keyless
-  // server proxy (vite.config.ts). A slow or failed health check should not
-  // strand the chat on the deterministic local fallback.
-  const useProxy = !llmReady;
-  const activeModel = llmReady
-    ? model.replace(/^.*\//, "")
-    : (server.model ?? "local-engine").replace(/^.*\//, "");
-  const engineLabel = llmReady
-    ? "BYOK LINK"
-    : server.ready
-      ? "TELOS LINK"
-      : server.checked
-        ? "LOCAL SIM"
-        : "CONNECTING";
-
-  // Ask the dev proxy whether it has a server-side key. Short timeout so a
-  // static/prod deploy (no proxy) fails over to the local engine instantly.
-  useEffect(() => {
-    if (!open) return;
-    let cancelled = false;
-    const controller = new AbortController();
-    const timer = window.setTimeout(() => controller.abort(), 3000);
-    fetch(PROXY_URL, { signal: controller.signal, cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) return null;
-        return (await response.json()) as { ok?: boolean; model?: string };
-      })
-      .then((data) => {
-        if (!cancelled) {
-          setServer({ checked: true, ready: Boolean(data?.ok), model: data?.model });
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setServer({ checked: true, ready: false });
-      })
-      .finally(() => window.clearTimeout(timer));
-    return () => {
-      cancelled = true;
-      controller.abort();
-      window.clearTimeout(timer);
-    };
-  }, [open]);
+  // Read on every render: the key appears as soon as the wallet connects.
+  const hasKey = Boolean(getTelosApiKey());
 
   const pushMessage = (message: Omit<Message, "id">) => {
     idRef.current += 1;
@@ -555,12 +226,8 @@ export default function StrategyChatModal({
     );
   };
 
-  const pushBot = (
-    text: string,
-    chips?: string[],
-    card?: StrategySpec,
-    sources?: Source[],
-  ) => pushMessage({ role: "bot", text, chips, card, sources });
+  const pushBot = (text: string, chips?: string[], card?: StrategySpec, sources?: Source[]) =>
+    pushMessage({ role: "bot", text, chips, card, sources });
 
   useEffect(() => {
     return () => {
@@ -578,7 +245,6 @@ export default function StrategyChatModal({
       seededRef.current = true;
       pushBot(WELCOME, WELCOME_CHIPS);
     }
-    setSavedCount(loadSavedStrategies().length);
     const focusTimer = window.setTimeout(() => inputRef.current?.focus(), 60);
     return () => {
       window.clearTimeout(focusTimer);
@@ -617,80 +283,6 @@ export default function StrategyChatModal({
     endRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
   }, [messages, typing]);
 
-  const generateFrom = (draft: Draft) => {
-    const spec = buildStrategy(draft);
-    pushBot(
-      "local compile ✓ — deterministic IStrategy template attached. it is not protocol-specific and not audited, so it will open in the create-strategy modal as an unverified draft. you can still review and register it there.",
-      undefined,
-      spec,
-    );
-  };
-
-  const advanceLocal = (text: string) => {
-    const next = extractDraft(text, draftRef.current);
-    draftRef.current = next;
-
-    if (/surprise|random|🎲|whatever|idk/i.test(text)) {
-      const randomDraft = { ...RANDOM_DRAFTS[Math.floor(Math.random() * RANDOM_DRAFTS.length)] };
-      draftRef.current = randomDraft;
-      generateFrom(randomDraft);
-      return;
-    }
-
-    if (/^(hi|hey|hello|yo|sup|gm)\b/i.test(text.trim())) {
-      pushBot(
-        "hey. want to talk through a strategy, or should i compile one? try: “compile a low-risk USDC lending strategy on Base”.",
-        ["Compile a USDC lending strategy on Base", "Explain funding carry", "🎲 surprise me"],
-      );
-      return;
-    }
-
-    if (/help|what can you|how does this work|who are you/i.test(text)) {
-      pushBot(
-        "i can chat through ideas, compare venues, and compile a complete IStrategy contract when you ask. contracts go to the create-strategy modal for verification before they can be registered. deposits settle on Robinhood Testnet while strategies can target any supported EVM chain.",
-        ["Compile a delta-neutral USDC strategy", "What chains are supported?", "🎲 surprise me"],
-      );
-      return;
-    }
-
-    if (/use defaults?|defaults?/i.test(text)) {
-      const defaults: Draft = {
-        goal: next.goal ?? "Stable yield",
-        risk: next.risk ?? "MED",
-        chain: next.chain ?? "Base",
-        asset: next.asset ?? "USDC",
-        fee: next.fee ?? 5,
-      };
-      draftRef.current = defaults;
-      generateFrom(defaults);
-      return;
-    }
-
-    if (
-      wantsCompileRequest(text) &&
-      (next.goal || next.risk || next.chain || next.asset)
-    ) {
-      generateFrom(next);
-      return;
-    }
-
-    const question = nextQuestion(next);
-    if (!question) {
-      generateFrom(next);
-      return;
-    }
-
-    if (!next.goal && !next.risk && !next.chain && !next.asset && text.trim().length < 16) {
-      pushBot(
-        "i'm listening. describe the play and i'll either talk it through or compile it when you say so.",
-        ["Compile a low-risk USDC strategy on Base", "Compare lending vs LP", "🎲 surprise me"],
-      );
-      return;
-    }
-
-    pushBot(question.text, question.chips);
-  };
-
   const stopLlm = () => {
     if (!abortRef.current) return;
     abortReasonRef.current = "user";
@@ -723,25 +315,16 @@ export default function StrategyChatModal({
       const pack = await fetchAuditPack(spec.code, controller.signal);
       if (auditSeqRef.current !== seq) return;
 
-      const direct = llmReady;
-      const response = await fetch(direct ? DIRECT_URL : PROXY_URL, {
+      const response = await fetch(PROXY_URL, {
         method: "POST",
-        headers: direct
-          ? {
-              Authorization: `Bearer ${apiKey.trim()}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": window.location.origin,
-              "X-Title": "Telos Strategy Lab — ETHSKILLS Audit",
-            }
-          : { "Content-Type": "application/json" },
+        headers: authHeaders(),
         signal: controller.signal,
         body: JSON.stringify({
-          ...(direct ? { model: model.trim() || DEFAULT_MODEL } : { purpose: "audit" }),
+          purpose: "audit",
           messages: buildAuditMessages(spec, pack),
           temperature: 0,
           max_tokens: 2200,
           stream: false,
-          reasoning: { enabled: false },
         }),
       });
 
@@ -763,21 +346,19 @@ export default function StrategyChatModal({
       if (audit.status === "passed") {
         pushMessage({
           role: "sys",
-          text: "ETHSKILLS AUDIT ✓ — no critical/high findings. contract cleared for strategy creation.",
+          text: "ETHSKILLS AUDIT ✓ — no critical/high findings. ready to deploy.",
         });
       } else if (audit.status === "failed") {
         pushMessage({
           role: "sys",
           text: `ETHSKILLS AUDIT FAILED — ${audit.findings.length} finding${
             audit.findings.length === 1 ? "" : "s"
-          }. use is locked until the contract passes a re-audit.`,
+          }. repair it and re-audit before deploying.`,
         });
       } else {
         pushMessage({
           role: "sys",
-          text: `ETHSKILLS AUDIT UNAVAILABLE — ${
-            audit.error ?? "no parsable verdict"
-          }. contract locked until it is audited.`,
+          text: `ETHSKILLS AUDIT UNAVAILABLE — ${audit.error ?? "no parsable verdict"}.`,
         });
       }
     } catch (error) {
@@ -796,10 +377,7 @@ export default function StrategyChatModal({
         error: detail,
         checkedAt: Date.now(),
       });
-      pushMessage({
-        role: "sys",
-        text: `ETHSKILLS AUDIT UNAVAILABLE — ${detail}. contract locked until it is audited.`,
-      });
+      pushMessage({ role: "sys", text: `ETHSKILLS AUDIT UNAVAILABLE — ${detail}.` });
     } finally {
       window.clearTimeout(timer);
       if (auditSeqRef.current === seq) {
@@ -832,16 +410,11 @@ export default function StrategyChatModal({
     const sources: Source[] = [];
     const compileIntent = isRepair || wantsCompileRequest(text);
     const stale = () => requestRef.current !== requestId;
-    // Web results are optional and cost extra per request, so the call only
-    // asks for them when the toggle is on and the prompt needs fresh facts.
-    const webPlugins =
-      webSearch && !isRepair && needsWebSearch(text)
-        ? [{ id: "web", max_results: 5 }]
-        : [];
+    // Web results cost extra per request, so only ask for them when the prompt
+    // needs fresh facts.
+    const webPlugins = !isRepair && needsWebSearch(text) ? [{ id: "web", max_results: 5 }] : [];
     setWebActive(webPlugins.length > 0);
 
-    // Without a first-token timeout the modal sits on "COMPUTING…" forever if
-    // OpenRouter queues. The hard timeout also catches a stalled stream.
     const firstTokenTimeout = window.setTimeout(() => {
       if (sawFirstToken) return;
       abortReasonRef.current = "timeout";
@@ -859,25 +432,11 @@ export default function StrategyChatModal({
     }, 5_000);
 
     try {
-      const direct = llmReady;
-      const requestModel = direct
-        ? model.trim() || DEFAULT_MODEL
-        : server.model || "telos-local";
-      const response = await fetch(direct ? DIRECT_URL : PROXY_URL, {
+      const response = await fetch(PROXY_URL, {
         method: "POST",
-        headers: direct
-          ? {
-              Authorization: `Bearer ${apiKey.trim()}`,
-              "Content-Type": "application/json",
-              "HTTP-Referer": window.location.origin,
-              "X-Title": "Telos Strategy Lab",
-            }
-          : { "Content-Type": "application/json" },
+        headers: authHeaders(),
         signal: controller.signal,
         body: JSON.stringify({
-          // The proxy owns the key and model; only send a model when the user
-          // brought their own key.
-          ...(direct ? { model: model.trim() || DEFAULT_MODEL } : {}),
           // `historyRef` already ends with the current user message.
           messages: [
             { role: "system", content: STRATEGY_SYSTEM_PROMPT },
@@ -886,8 +445,6 @@ export default function StrategyChatModal({
           temperature: 0.25,
           max_tokens: 4096,
           stream: true,
-          // Skip the hidden reasoning phase (~6s on the default free model).
-          reasoning: { enabled: false },
           ...(webPlugins.length > 0 ? { plugins: webPlugins } : {}),
         }),
       });
@@ -903,17 +460,7 @@ export default function StrategyChatModal({
         }
         throw new Error(describeHttpError(response.status, detail));
       }
-      if (!response.body) throw new Error("provider returned no stream");
-
-      // The dev proxy reports which model in the failover chain actually served
-      // the request. Direct BYOK calls fall back to the requested model.
-      const servedModel =
-        response.headers.get("x-telos-model") || requestModel;
-      // The health check may have lost a race with the dev server starting up;
-      // a real reply is proof the proxy is live.
-      if (!direct && (!server.ready || server.model !== servedModel)) {
-        setServer({ checked: true, ready: true, model: servedModel });
-      }
+      if (!response.body) throw new Error("strategist returned no stream");
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -941,11 +488,7 @@ export default function StrategyChatModal({
             error?: { message?: string };
             annotations?: unknown;
             choices?: {
-              delta?: {
-                content?: unknown;
-                reasoning?: unknown;
-                annotations?: unknown;
-              };
+              delta?: { content?: unknown; reasoning?: unknown; annotations?: unknown };
               message?: { annotations?: unknown };
             }[];
           };
@@ -956,8 +499,7 @@ export default function StrategyChatModal({
           }
           if (chunk.error) throw new Error(chunk.error.message ?? "provider error");
 
-          // OpenRouter attaches web citations to the delta (streaming) or the
-          // final message. Keep a de-duplicated list for the source chips.
+          // Web citations arrive on the delta (streaming) or the final message.
           const incoming = [
             ...readSources(chunk.choices?.[0]?.delta?.annotations),
             ...readSources(chunk.choices?.[0]?.message?.annotations),
@@ -968,7 +510,7 @@ export default function StrategyChatModal({
           }
 
           // Some providers ignore the reasoning flag. Surface their thinking as
-          // a live token counter instead of six seconds of silent dots.
+          // a live token counter instead of silent dots.
           const reasoningDelta = chunk.choices?.[0]?.delta?.reasoning;
           if (typeof reasoningDelta === "string" && reasoningDelta) {
             reasoningChars += reasoningDelta.length;
@@ -986,18 +528,15 @@ export default function StrategyChatModal({
           if (!sawFirstToken) {
             sawFirstToken = true;
             setThinkingTokens(0);
-            setTyping(false); // dots off: real text is landing now
+            setTyping(false);
             setStreaming(true);
           }
           setDraftingChars(answer.length);
 
           const visible = visibleAnswer(answer);
-          // Always update: when the model jumps straight into JSON the visible
-          // prose is empty after the first character. Show a moving character
+          // The model jumps into JSON after a few words; show a moving character
           // count so a long contract does not look frozen.
-          const shown =
-            visible ||
-            `drafting contract… ${formatCount(answer.length)} chars`;
+          const shown = visible || `drafting contract… ${formatCount(answer.length)} chars`;
           if (streamedId < 0) {
             streamedId = pushBot(shown).id;
           } else {
@@ -1007,19 +546,14 @@ export default function StrategyChatModal({
       }
 
       if (stale()) return;
-      if (!answer.trim()) throw new Error("model returned an empty reply");
+      if (!answer.trim()) throw new Error("the strategist returned an empty reply");
 
-      const parsed = parseStrategyReply(answer, servedModel);
-      const finalText =
-        parsed.text || (parsed.spec ? "contract compiled." : "reply complete.");
+      const parsed = parseStrategyReply(answer, "telos");
+      const finalText = parsed.text || (parsed.spec ? "strategy compiled." : "reply complete.");
       const sourceList = sources.length > 0 ? sources : undefined;
       let cardMessageId = streamedId;
       if (streamedId >= 0) {
-        updateMessage(streamedId, {
-          text: finalText,
-          card: parsed.spec,
-          sources: sourceList,
-        });
+        updateMessage(streamedId, { text: finalText, card: parsed.spec, sources: sourceList });
       } else {
         cardMessageId = pushBot(finalText, undefined, parsed.spec, sourceList).id;
       }
@@ -1027,9 +561,7 @@ export default function StrategyChatModal({
       historyRef.current.push({ role: "assistant", content: answer.slice(0, 12000) });
 
       if (parsed.spec) {
-        setSavedCount(loadSavedStrategies().length);
-        const validation =
-          parsed.spec.validation ?? validateStrategySource(parsed.spec.code);
+        const validation = parsed.spec.validation ?? validateStrategySource(parsed.spec.code);
         if (validation.ok) {
           pushMessage({
             role: "sys",
@@ -1043,14 +575,12 @@ export default function StrategyChatModal({
             role: "sys",
             text: `validator flagged ${validation.issues.length} issue${
               validation.issues.length === 1 ? "" : "s"
-            } — repairing once…\n${validation.issues
-              .map((issue) => `· ${issue}`)
-              .join("\n")}`,
+            } — repairing once…\n${validation.issues.map((issue) => `· ${issue}`).join("\n")}`,
           });
         } else {
           pushMessage({
             role: "sys",
-            text: `validator still failing — do not deploy until these are fixed:\n${validation.issues
+            text: `validator still failing — fix these before deploying:\n${validation.issues
               .map((issue) => `· ${issue}`)
               .join("\n")}`,
           });
@@ -1058,7 +588,7 @@ export default function StrategyChatModal({
       } else if (/\bMETA\s*:|"contract"\s*:|pragma\s+solidity/i.test(answer)) {
         pushMessage({
           role: "sys",
-          text: "the strategy JSON came back incomplete or unparseable — send \"retry\" to recompile it.",
+          text: 'the strategy JSON came back incomplete or unparseable — send "retry" to recompile it.',
         });
       } else if (compileIntent && repairsRef.current < MAX_REPAIRS && !/\?\s*$/.test(parsed.text.trim())) {
         // The user asked for a contract but got prose. Nudge once with a format
@@ -1070,18 +600,15 @@ export default function StrategyChatModal({
           text: "no contract in that reply — recompiling with a stricter format reminder…",
         });
       } else if (compileIntent) {
-        pushMessage({
-          role: "sys",
-          text: "no contract in that reply — say \"compile it\" for another pass.",
-        });
+        pushMessage({ role: "sys", text: 'no contract in that reply — say "compile it" for another pass.' });
       }
     } catch (error) {
       const live = abortRef.current === controller;
       const reason = live ? abortReasonRef.current : "superseded";
       if (reason === "superseded") return;
 
-      // Never leave a "drafting contract…" placeholder behind after a stop or
-      // a timeout. Swap it for whatever prose actually arrived.
+      // Never leave a "drafting contract…" placeholder behind after a stop or a
+      // timeout. Swap it for whatever prose actually arrived.
       if (streamedId >= 0) {
         const partial = visibleAnswer(answer);
         updateMessage(streamedId, {
@@ -1102,21 +629,14 @@ export default function StrategyChatModal({
             : error instanceof Error
               ? error.message
               : "unknown error";
-        const fallback = streamedId < 0;
         pushMessage({
           role: "sys",
           text: isRepair
-            ? `LLM OFFLINE — ${detail}. repair skipped; keep this contract out of deploy.`
-            : fallback
-              ? compileIntent
-                ? `LLM OFFLINE — ${detail}. falling back to the local strategist.`
-                : `LLM OFFLINE — ${detail}. the local sim can still compile a strategy if you ask for one.`
-              : `LLM OFFLINE — ${detail}. that reply got cut short.`,
+            ? `STRATEGIST OFFLINE — ${detail}. repair skipped; do not deploy this contract.`
+            : streamedId < 0
+              ? `STRATEGIST OFFLINE — ${detail}.`
+              : `STRATEGIST OFFLINE — ${detail}. that reply got cut short.`,
         });
-        // Local answers are instant; run after this block clears the flags.
-        if (fallback && !isRepair && compileIntent) {
-          queueMicrotask(() => advanceLocal(text));
-        }
       }
     } finally {
       window.clearTimeout(firstTokenTimeout);
@@ -1142,10 +662,15 @@ export default function StrategyChatModal({
     const text = raw.trim();
     if (!text || typing || streaming) return;
     setInput("");
-    pushMessage({ role: "user", text });
 
     if (/^new chat$/i.test(text)) {
       resetChat();
+      return;
+    }
+
+    pushMessage({ role: "user", text });
+    if (!getTelosApiKey()) {
+      pushMessage({ role: "sys", text: NEEDS_WALLET });
       return;
     }
 
@@ -1153,11 +678,7 @@ export default function StrategyChatModal({
     repairsRef.current = 0;
     window.clearTimeout(repairTimerRef.current);
     repairTimerRef.current = 0;
-    if (llmReady || useProxy) {
-      void askLlm(text);
-    } else {
-      advanceLocal(text);
-    }
+    void askLlm(text);
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -1181,7 +702,6 @@ export default function StrategyChatModal({
     setTyping(false);
     setStreaming(false);
     setInput("");
-    draftRef.current = {};
     historyRef.current = [];
     repairsRef.current = 0;
     setMessages([]);
@@ -1192,32 +712,24 @@ export default function StrategyChatModal({
 
   const handleUse = (spec: StrategySpec) => {
     if (!spec.code) {
-      pushMessage({
-        role: "sys",
-        text: "no contract source on this draft — link a model and compile Solidity first.",
-      });
+      pushMessage({ role: "sys", text: "no contract source on this draft — ask me to compile it again." });
       return;
     }
     if (spec.validation && !spec.validation.ok) {
       pushMessage({
         role: "sys",
-        text: `contract failed the structural validator — fix these before attaching it:\n${spec.validation.issues
+        text: `contract failed the structural validator — fix these before deploying:\n${spec.validation.issues
           .map((issue) => `· ${issue}`)
           .join("\n")}`,
       });
       return;
     }
-    if (!isAuditCleared(spec.audit)) {
-      pushMessage({
-        role: "sys",
-        text: "opening the create-strategy modal — this contract has not cleared the ETHSKILLS audit yet, so it will show as an unverified draft.",
-      });
-    } else {
-      pushMessage({
-        role: "sys",
-        text: "opening the create-strategy modal with the verified contract…",
-      });
-    }
+    pushMessage({
+      role: "sys",
+      text: isAuditCleared(spec.audit)
+        ? "opening the review dialog — deploy it from there."
+        : "opening the review dialog. this contract has not cleared the audit yet.",
+    });
     onUseStrategy(spec);
     onClose();
   };
@@ -1225,10 +737,7 @@ export default function StrategyChatModal({
   const handleRepairAudit = (spec: StrategySpec) => {
     if (!spec.audit) return;
     const prompt = buildAuditRepairPrompt(spec.audit);
-    pushMessage({
-      role: "user",
-      text: "fix the ETHSKILLS audit findings and re-emit the full contract.",
-    });
+    pushMessage({ role: "user", text: "fix the ETHSKILLS audit findings and re-emit the full contract." });
     historyRef.current.push({ role: "user", content: prompt });
     repairsRef.current = 0;
     window.clearTimeout(repairTimerRef.current);
@@ -1250,10 +759,7 @@ export default function StrategyChatModal({
 
   const handleDownload = (spec: StrategySpec) => {
     if (!spec.code) {
-      pushMessage({
-        role: "sys",
-        text: "no contract source on this draft — link a model and compile first.",
-      });
+      pushMessage({ role: "sys", text: "no contract source on this draft — ask me to compile it first." });
       return;
     }
     try {
@@ -1269,20 +775,9 @@ export default function StrategyChatModal({
     }
   };
 
-  const linkKey = () => {
-    const key = keyDraft.trim();
-    setApiKey(key);
-    writeStorage(KEY_STORAGE, key);
-    writeStorage(MODEL_STORAGE, model.trim() || DEFAULT_MODEL);
-    pushMessage({
-      role: "sys",
-      text: key
-        ? "llm linked. the lab now routes prompts through openrouter."
-        : "llm unlinked. running on the local strategist.",
-    });
-  };
-
   if (!open) return null;
+
+  const busy = typing || streaming || auditing;
 
   return (
     <div className="y2k-overlay" onClick={onClose}>
@@ -1303,7 +798,7 @@ export default function StrategyChatModal({
             strategy-studio
           </span>
           <span className="y2k-title-sub">— Telos</span>
-          <span className="y2k-title-meta">VS CODE DARK / {engineLabel}</span>
+          <span className="y2k-title-meta">{hasKey ? "TELOS LINK" : "WALLET REQUIRED"}</span>
           <div className="y2k-winbtns">
             <button type="button" onClick={onClose} aria-label="Close strategy lab">
               ×
@@ -1331,7 +826,7 @@ export default function StrategyChatModal({
                 <b>TELOS STRATEGIST</b>
                 <span className="y2k-agent-status">
                   <i className="y2k-led" aria-hidden="true" />
-                  {llmReady ? "BYOK LINKED" : server.ready ? "TELOS LINKED" : "LOCAL SIM"}
+                  {hasKey ? "LINKED" : "WALLET REQUIRED"}
                 </span>
               </div>
             </div>
@@ -1344,7 +839,7 @@ export default function StrategyChatModal({
                 </span>
                 <div>
                   <b>strategy.chat</b>
-                  <span>{typing || streaming || auditing ? "live compile" : "ready to chat"}</span>
+                  <span>{busy ? "live compile" : "ready to chat"}</span>
                 </div>
               </div>
             </div>
@@ -1356,117 +851,14 @@ export default function StrategyChatModal({
               </button>
               <dl className="y2k-stats">
                 <div>
-                  <dt>MODEL</dt>
-                  <dd>{activeModel || "auto"}</dd>
+                  <dt>DEPOSITS</dt>
+                  <dd>Robinhood Testnet</dd>
                 </div>
                 <div>
-                  <dt>SAVED</dt>
-                  <dd>{savedCount.toString().padStart(2, "0")}</dd>
+                  <dt>WEB</dt>
+                  <dd>AUTO</dd>
                 </div>
               </dl>
-            </div>
-
-            <div className="y2k-rail-block">
-              <button
-                type="button"
-                className="btn btn-sm y2k-block"
-                aria-expanded={settingsOpen}
-                onClick={() => setSettingsOpen((current) => !current)}
-              >
-                ⚙ Model &amp; API key {settingsOpen ? "▴" : "▾"}
-              </button>
-              {settingsOpen ? (
-                <div className="y2k-settings-body">
-                  <label className="y2k-key-label" htmlFor="y2k-key">
-                    API KEY
-                  </label>
-                  <input
-                    id="y2k-key"
-                    className="input y2k-key"
-                    type="password"
-                    value={keyDraft}
-                    placeholder="sk-or-v1-…"
-                    autoComplete="off"
-                    spellCheck={false}
-                    onChange={(event) => setKeyDraft(event.target.value)}
-                  />
-                  <label className="y2k-key-label" htmlFor="y2k-model">
-                    MODEL
-                  </label>
-                  <input
-                    id="y2k-model"
-                    className="input y2k-key"
-                    type="text"
-                    value={model}
-                    spellCheck={false}
-                    onChange={(event) => setModel(event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="btn btn-sm y2k-block y2k-btn-primary"
-                    onClick={linkKey}
-                  >
-                    {llmReady ? "Update key" : "Use own key"}
-                  </button>
-                  {llmReady ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm y2k-block"
-                      onClick={() => {
-                        setKeyDraft("");
-                        setApiKey("");
-                        writeStorage(KEY_STORAGE, "");
-                        pushMessage({ role: "sys", text: "key removed — back on the telos link." });
-                      }}
-                    >
-                      Use Telos link
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="btn btn-sm y2k-block"
-                    onClick={() => {
-                      setModel(DEFAULT_MODEL);
-                      writeStorage(MODEL_STORAGE, DEFAULT_MODEL);
-                      pushMessage({ role: "sys", text: `model → ${DEFAULT_MODEL} (fastest option).` });
-                    }}
-                  >
-                    Use fast model
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn-sm y2k-block"
-                    aria-pressed={webSearch}
-                    onClick={() => {
-                      const next = !webSearch;
-                      setWebSearch(next);
-                      writeStorage(WEB_STORAGE, next ? "1" : "0");
-                      pushMessage({
-                        role: "sys",
-                        text: next
-                          ? "live web lookups auto — current-info questions can cite prices, yields and protocol news."
-                          : "live web lookups off — answers use the model's own knowledge only.",
-                      });
-                    }}
-                  >
-                    Web lookups: {webSearch ? "AUTO" : "OFF"}
-                  </button>
-                  <p className="y2k-fineprint">
-                    works out of the box through the telos llm proxy. paste an
-                    openrouter key only if you want to use your own account.
-                    live lookups run for current-info questions and may add a
-                    small openrouter charge.
-                  </p>
-                </div>
-              ) : (
-                <p className="y2k-fineprint">
-                  {llmReady
-                    ? "using your key. click to change it."
-                    : server.ready
-                      ? "telos llm linked — no login needed."
-                      : "local sim online. add a key to use the llm."}
-                </p>
-              )}
             </div>
 
             <div className="y2k-rail-block y2k-howto">
@@ -1474,8 +866,8 @@ export default function StrategyChatModal({
               <p>01. Chat or brainstorm</p>
               <p>02. Ask to compile</p>
               <p>03. Review &amp; audit</p>
-              <p>04. Register the strategy</p>
-              <p>05. Create a vault</p>
+              <p>04. Deploy the strategy</p>
+              <p>05. Create a vault on it</p>
             </div>
           </aside>
 
@@ -1487,7 +879,7 @@ export default function StrategyChatModal({
               </div>
               <span className="y2k-onair">
                 <i aria-hidden="true" />
-                {typing || streaming || auditing ? "WORKING" : "READY"}
+                {busy ? "WORKING" : "READY"}
               </span>
             </div>
             <div className="y2k-transcript" aria-live="polite">
@@ -1502,12 +894,7 @@ export default function StrategyChatModal({
                       <div className="y2k-sources">
                         <span className="y2k-label">WEB SOURCES</span>
                         {message.sources.map((source) => (
-                          <a
-                            key={source.url}
-                            href={source.url}
-                            target="_blank"
-                            rel="noreferrer"
-                          >
+                          <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
                             {source.title}
                           </a>
                         ))}
@@ -1521,7 +908,7 @@ export default function StrategyChatModal({
                             className="y2k-chip"
                             key={chip}
                             onClick={() => handleSend(chip)}
-                            disabled={typing || streaming}
+                            disabled={busy || !hasKey}
                           >
                             {chip}
                           </button>
@@ -1532,7 +919,7 @@ export default function StrategyChatModal({
                       <StrategyCard
                         spec={message.card}
                         copied={copied === message.card.name}
-                        busy={typing || streaming || auditing}
+                        busy={busy}
                         onUse={handleUse}
                         onCopy={handleCopy}
                         onDownload={handleDownload}
@@ -1568,7 +955,8 @@ export default function StrategyChatModal({
                 className="y2k-input"
                 type="text"
                 value={input}
-                placeholder="Ask for a strategy, or ask to compile…"
+                disabled={!hasKey}
+                placeholder={hasKey ? "Ask for a strategy, or ask to compile…" : "Connect your wallet to chat"}
                 aria-label="Message the strategy assistant"
                 spellCheck={false}
                 onChange={(event) => setInput(event.target.value)}
@@ -1578,7 +966,7 @@ export default function StrategyChatModal({
                   Stop
                 </button>
               ) : (
-                <button type="submit" className="btn y2k-send" disabled={!input.trim()}>
+                <button type="submit" className="btn y2k-send" disabled={!hasKey || !input.trim()}>
                   Send ↵
                 </button>
               )}
@@ -1588,18 +976,12 @@ export default function StrategyChatModal({
 
         <div className="y2k-statusbar">
           <span className="y2k-status-item" aria-hidden="true">
-            ⑂ main
-          </span>
-          <span className="y2k-status-item" aria-hidden="true">
             ⊘ 0
           </span>
           <span className="y2k-status-item" aria-hidden="true">
             △ 0
           </span>
-          <span
-            className={`y2k-led${typing || streaming || auditing ? " is-busy" : ""}`}
-            aria-hidden="true"
-          />
+          <span className={`y2k-led${busy ? " is-busy" : ""}`} aria-hidden="true" />
           <span>
             {streaming
               ? draftingChars > 0
@@ -1613,16 +995,11 @@ export default function StrategyChatModal({
                     : "Thinking…"
                   : auditing
                     ? "Auditing with EthSkills…"
-                    : llmReady
-                      ? "OpenRouter linked"
-                      : server.ready
-                        ? "Telos LLM online"
-                        : "Local sim online"}
+                    : hasKey
+                      ? "Telos strategist online"
+                      : "Wallet required"}
           </span>
           <span className="y2k-statusbar-spacer" />
-          <span className="y2k-status-item">
-            WEB {webSearch ? "AUTO" : "OFF"}
-          </span>
           <span className="y2k-status-item">Solidity</span>
           <span className="y2k-status-item">UTF-8</span>
           <span className="y2k-status-item">Telos Testnet</span>
@@ -1676,12 +1053,6 @@ function StrategyCard({
         <span>{spec.asset}</span>
         <span>·</span>
         <span>{spec.code ? "SOLIDITY · ISTRATEGY" : "SPEC ONLY · NO SOURCE"}</span>
-        {spec.source === "local" ? (
-          <>
-            <span>·</span>
-            <span className="y2k-pending">LOCAL TEMPLATE</span>
-          </>
-        ) : null}
         {validation ? (
           <>
             <span>·</span>
@@ -1695,11 +1066,7 @@ function StrategyCard({
             <span>·</span>
             <span
               className={
-                cleared
-                  ? "y2k-pass"
-                  : audit.status === "failed" || audit.status === "unavailable"
-                    ? "y2k-fail"
-                    : "y2k-pending"
+                cleared ? "y2k-pass" : audit.status === "failed" || audit.status === "unavailable" ? "y2k-fail" : "y2k-pending"
               }
             >
               AUDIT {auditStatusLabel(audit)}
@@ -1758,11 +1125,7 @@ function StrategyCard({
             <span>ETHSKILLS AUDIT</span>
             <span
               className={
-                cleared
-                  ? "y2k-pass"
-                  : audit.status === "failed" || audit.status === "unavailable"
-                    ? "y2k-fail"
-                    : "y2k-pending"
+                cleared ? "y2k-pass" : audit.status === "failed" || audit.status === "unavailable" ? "y2k-fail" : "y2k-pending"
               }
             >
               {auditStatusLabel(audit)}
@@ -1771,19 +1134,14 @@ function StrategyCard({
           </div>
           <p className="y2k-audit-engine">{audit.engine}</p>
           {audit.status === "running" ? (
-            <p className="y2k-audit-summary">
-              independent reviewer running against the pinned ethskills checklists…
-            </p>
+            <p className="y2k-audit-summary">independent reviewer running against the pinned ethskills checklists…</p>
           ) : null}
           {audit.summary ? <p className="y2k-audit-summary">{audit.summary}</p> : null}
           {audit.error ? <p className="y2k-audit-summary y2k-fail">{audit.error}</p> : null}
           {audit.findings.length ? (
             <ul className="y2k-audit-findings">
               {audit.findings.map((finding, index) => (
-                <li
-                  key={`${finding.title}-${index}`}
-                  className={`y2k-sev--${finding.severity.toLowerCase()}`}
-                >
+                <li key={`${finding.title}-${index}`} className={`y2k-sev--${finding.severity.toLowerCase()}`}>
                   <div className="y2k-finding-head">
                     <b>[{finding.severity}]</b>
                     <span>{finding.title}</span>
@@ -1798,21 +1156,11 @@ function StrategyCard({
           {audit.status === "failed" || audit.status === "unavailable" ? (
             <div className="y2k-audit-actions">
               {audit.status === "failed" ? (
-                <button
-                  type="button"
-                  className="btn btn-sm y2k-btn-primary"
-                  onClick={() => onRepair(spec)}
-                  disabled={busy}
-                >
+                <button type="button" className="btn btn-sm y2k-btn-primary" onClick={() => onRepair(spec)} disabled={busy}>
                   Repair &amp; re-audit →
                 </button>
               ) : (
-                <button
-                  type="button"
-                  className="btn btn-sm y2k-btn-primary"
-                  onClick={() => onRetry(spec)}
-                  disabled={busy}
-                >
+                <button type="button" className="btn btn-sm y2k-btn-primary" onClick={() => onRetry(spec)} disabled={busy}>
                   Retry audit ↻
                 </button>
               )}
@@ -1832,18 +1180,10 @@ function StrategyCard({
               ? "This draft has no contract source"
               : !validationOk
                 ? "Fix the validator issues first"
-                : cleared
-                  ? "Open the verified contract in the create-strategy modal"
-                  : "Open the contract in the create-strategy modal as an unverified draft"
+                : "Review and deploy this strategy"
           }
         >
-          {!spec.code
-            ? "No contract"
-            : !validationOk
-              ? "Fix validator issues"
-              : cleared
-                ? "Review strategy →"
-                : "Review unverified →"}
+          {!spec.code ? "No contract" : !validationOk ? "Fix validator issues" : "Review & deploy →"}
         </button>
         <button type="button" className="btn btn-plain btn-sm" onClick={() => onCopy(spec)}>
           {copied ? "Copied ✓" : spec.code ? "Copy contract" : "Copy spec"}
@@ -1861,12 +1201,12 @@ function StrategyCard({
       {!cleared ? (
         <p className="y2k-audit-lock">
           {!spec.code
-            ? "contract missing — link a model or use the local template, then compile again."
+            ? "no contract source — ask me to compile it again."
             : !validationOk
-              ? "validator failed — repair the source before opening the strategy modal."
+              ? "validator failed — repair the source before deploying."
               : audit?.status === "running"
-                ? "audit still running — you can review the source now, but it will open as unverified."
-                : "audit not cleared — the strategy modal will mark this as an unverified draft."}
+                ? "audit still running — you can review the source now."
+                : "audit not cleared yet — the strategy will deploy as unaudited."}
         </p>
       ) : null}
     </div>

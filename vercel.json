@@ -1,0 +1,6 @@
+{
+  "installCommand": "cd telos && npm ci",
+  "buildCommand": "cd telos && npm run build",
+  "outputDirectory": "telos/dist",
+  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+}

@@ -1,48 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getTelosApiKey, telosFetch } from "../api-handler/Telos/telos-session";
 import { auditStatusLabel, isAuditCleared } from "../strategies/ethskills-audit";
-import {
-  strategyFileName,
-  validateStrategySource,
-  type StrategySpec,
-} from "../strategies/strategy-standard";
-import { saveStrategy } from "../strategies/strategy-store";
-import { llmLabel } from "../llm-models";
+import { strategyFileName, validateStrategySource, type StrategySpec } from "../strategies/strategy-standard";
 import { lockBodyScroll } from "../utils/scrollLock";
 
 type Props = {
   open: boolean;
   spec: StrategySpec | null;
   onClose: () => void;
-  onCreateVault: (spec: StrategySpec) => void;
   onOpenChat: () => void;
 };
 
 /**
- * Compact strategy review dialog.
- *
- * The chat returns a JSON strategy object (metadata + full contract). This
- * modal renders that object with just enough context to save it or carry it
- * into the create-vault form — no separate verification workflow.
+ * Review and deploy a strategy drafted in the strategy chat. Deploying
+ * registers it with the Telos API, so it shows up on the Strategies page and
+ * can be picked when creating a vault.
  */
-export default function CreateStrategyModal({
-  open,
-  spec,
-  onClose,
-  onCreateVault,
-  onOpenChat,
-}: Props) {
-  const [current, setCurrent] = useState<StrategySpec | null>(spec);
-  const [registered, setRegistered] = useState(false);
+export default function CreateStrategyModal({ open, spec, onClose, onOpenChat }: Props) {
+  const navigate = useNavigate();
+  const [deployed, setDeployed] = useState(false);
+  const [deploying, setDeploying] = useState(false);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    setCurrent(spec);
-    setRegistered(false);
-    setError("");
-    setCopied(false);
-  }, [open, spec]);
 
   useEffect(() => {
     if (!open) return;
@@ -58,40 +38,55 @@ export default function CreateStrategyModal({
   }, [open, onClose]);
 
   const validation = useMemo(
-    () =>
-      current?.validation ??
-      (current ? validateStrategySource(current.code) : { ok: false, issues: [] }),
-    [current],
+    () => spec?.validation ?? (spec ? validateStrategySource(spec.code) : { ok: false, issues: [] }),
+    [spec],
   );
-  const auditCleared = isAuditCleared(current?.audit);
-  const canUse = Boolean(current?.code) && validation.ok;
-  const lineCount = current?.code ? current.code.split("\n").length : 0;
+  const auditCleared = isAuditCleared(spec?.audit);
+  const lineCount = spec?.code ? spec.code.split("\n").length : 0;
 
-  const handleSave = () => {
-    if (!current) return;
+  if (!open || !spec) return null;
+
+  const handleDeploy = async () => {
     if (!validation.ok) {
-      setError("Fix the validator issues before saving this strategy.");
+      setError("Fix the validator issues before deploying.");
       return;
     }
-    saveStrategy({ ...current, validation });
-    setRegistered(true);
+    if (!getTelosApiKey()) {
+      setError("Connect your wallet to deploy a strategy.");
+      return;
+    }
+    setDeploying(true);
     setError("");
-  };
-
-  const handleCreateVault = () => {
-    if (!current) return;
-    if (!validation.ok) {
-      setError("Fix the validator issues before creating a vault.");
-      return;
+    try {
+      await telosFetch("/creator/strategies", {
+        method: "POST",
+        body: JSON.stringify({
+          name: spec.name,
+          ticker: spec.ticker,
+          chain: spec.chain,
+          asset: spec.asset,
+          risk: spec.risk,
+          fee: spec.fee,
+          thesis: spec.thesis,
+          allocations: spec.allocations,
+          guardrails: spec.guardrails,
+          contractName: spec.code.match(/contract\s+([A-Za-z_]\w*)\s+is\s+IStrategy/)?.[1] ?? "",
+          contractCode: spec.code,
+          model: spec.model ?? "",
+          auditStatus: auditStatusLabel(spec.audit),
+        }),
+      });
+      setDeployed(true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Deploy failed.");
+    } finally {
+      setDeploying(false);
     }
-    saveStrategy({ ...current, validation });
-    onCreateVault({ ...current, validation });
   };
 
   const handleCopy = async () => {
-    if (!current) return;
     try {
-      await navigator.clipboard.writeText(current.code || current.prompt);
+      await navigator.clipboard.writeText(spec.code || spec.prompt);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1800);
     } catch {
@@ -100,17 +95,15 @@ export default function CreateStrategyModal({
   };
 
   const handleDownload = () => {
-    if (!current?.code) return;
-    const blob = new Blob([current.code], { type: "text/plain;charset=utf-8" });
+    if (!spec.code) return;
+    const blob = new Blob([spec.code], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = strategyFileName(current);
+    anchor.download = strategyFileName(spec);
     anchor.click();
     URL.revokeObjectURL(url);
   };
-
-  if (!open || !current) return null;
 
   return (
     <div className="modal-overlay strategy-modal-overlay" onClick={onClose}>
@@ -123,78 +116,53 @@ export default function CreateStrategyModal({
       >
         <div className="modal-head strategy-modal-head">
           <div>
-            <span className="registry-kicker">STRATEGY / JSON REVIEW</span>
-            <h2 id="strategy-modal-title">🧬 {current.name}</h2>
+            <span className="registry-kicker">STRATEGY / REVIEW &amp; DEPLOY</span>
+            <h2 id="strategy-modal-title">{spec.name}</h2>
             <p className="strategy-modal-sub">
-              ${current.ticker} · {current.chain} · {current.asset} ·{" "}
-              {current.risk} RISK · {current.fee}% FEE
+              ${spec.ticker} · {spec.chain} · {spec.asset} · {spec.risk} RISK · {spec.fee}% FEE
             </p>
           </div>
-          <button
-            type="button"
-            className="btn btn-plain btn-sm"
-            onClick={onClose}
-            aria-label="Close strategy dialog"
-          >
+          <button type="button" className="btn btn-plain btn-sm" onClick={onClose} aria-label="Close strategy dialog">
             ✕
           </button>
         </div>
 
         <div className="strategy-modal-scroll">
           <div className="strategy-pill-row">
-            <span
-              className={`strategy-pill${
-                validation.ok ? " is-pass" : " is-fail"
-              }`}
-            >
-              {validation.ok
-                ? "VALIDATOR ✓"
-                : `VALIDATOR ✗ ${validation.issues.length}`}
+            <span className={`strategy-pill${validation.ok ? " is-pass" : " is-fail"}`}>
+              {validation.ok ? "VALIDATOR ✓" : `VALIDATOR ✗ ${validation.issues.length}`}
             </span>
-            <span className="strategy-pill">
-              MODEL {current.model ? llmLabel(current.model) : "NOT RECORDED"}
+            <span className={`strategy-pill${auditCleared ? " is-pass" : " is-pending"}`}>
+              AUDIT {auditStatusLabel(spec.audit)}
             </span>
-            <span
-              className={`strategy-pill${
-                auditCleared ? " is-pass" : " is-pending"
-              }`}
-            >
-              AUDIT {auditStatusLabel(current.audit)}
-            </span>
-            {current.source === "llm" ? (
-              <span className="strategy-pill is-pass">JSON ✓</span>
-            ) : (
-              <span className="strategy-pill">LOCAL TEMPLATE</span>
-            )}
           </div>
 
-          <div className="strategy-simple-grid">
-            <section className="strategy-panel">
-              <span className="strategy-panel-label">THESIS</span>
-              <p>{current.thesis}</p>
-            </section>
-            <section className="strategy-panel">
-              <span className="strategy-panel-label">ALLOCATIONS</span>
-              <div className="strategy-allocations">
-                {current.allocations.map((item) => (
-                  <div key={`${item.label}-${item.pct}`}>
-                    <div className="strategy-alloc-head">
-                      <span>{item.label}</span>
-                      <b>{item.pct}%</b>
-                    </div>
-                    <div className="strategy-bar">
-                      <i style={{ width: `${item.pct}%` }} />
-                    </div>
+          <section className="strategy-panel">
+            <span className="strategy-panel-label">AI THESIS</span>
+            <p>{spec.thesis}</p>
+          </section>
+
+          <section className="strategy-panel">
+            <span className="strategy-panel-label">ALLOCATIONS</span>
+            <div className="strategy-allocations">
+              {spec.allocations.map((item) => (
+                <div key={`${item.label}-${item.pct}`}>
+                  <div className="strategy-alloc-head">
+                    <span>{item.label}</span>
+                    <b>{item.pct}%</b>
                   </div>
-                ))}
-              </div>
-            </section>
-          </div>
+                  <div className="strategy-bar">
+                    <i style={{ width: `${item.pct}%` }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
 
           <section className="strategy-panel">
             <span className="strategy-panel-label">GUARDRAILS</span>
             <ul className="strategy-guardrails">
-              {current.guardrails.map((rule) => (
+              {spec.guardrails.map((rule) => (
                 <li key={rule}>{rule}</li>
               ))}
             </ul>
@@ -203,14 +171,10 @@ export default function CreateStrategyModal({
           <details className="strategy-code-wrap">
             <summary>
               <span>CONTRACT SOURCE</span>
-              <span>
-                {current.code
-                  ? `${lineCount} LINES · ${strategyFileName(current)}`
-                  : "NO SOURCE"}
-              </span>
+              <span>{spec.code ? `${lineCount} LINES · ${strategyFileName(spec)}` : "NO SOURCE"}</span>
             </summary>
             <pre className="strategy-code">
-              <code>{current.code || current.prompt}</code>
+              <code>{spec.code || spec.prompt}</code>
             </pre>
           </details>
 
@@ -222,9 +186,9 @@ export default function CreateStrategyModal({
             </ul>
           ) : null}
 
-          {registered ? (
+          {deployed ? (
             <p className="strategy-success" role="status">
-              ✓ Strategy saved to your local strategy library.
+              ✓ Strategy deployed. It is now listed on the Strategies page.
             </p>
           ) : null}
 
@@ -236,27 +200,28 @@ export default function CreateStrategyModal({
         </div>
 
         <div className="modal-actions strategy-actions">
-          <button
-            type="button"
-            className="btn"
-            onClick={handleCreateVault}
-            disabled={!canUse}
-            title={
-              canUse
-                ? "Open the create-vault form with this strategy attached"
-                : "Fix the failed validator checks first"
-            }
-          >
-            CREATE VAULT WITH STRATEGY →
-          </button>
-          <button
-            type="button"
-            className="btn btn-plain"
-            onClick={handleSave}
-            disabled={!canUse || registered}
-          >
-            {registered ? "SAVED ✓" : "SAVE STRATEGY"}
-          </button>
+          {deployed ? (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => {
+                onClose();
+                navigate("/strategies");
+              }}
+            >
+              VIEW STRATEGIES →
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn"
+              onClick={() => void handleDeploy()}
+              disabled={!validation.ok || deploying}
+              title={validation.ok ? "Deploy this strategy" : "Fix the failed validator checks first"}
+            >
+              {deploying ? "DEPLOYING…" : "DEPLOY STRATEGY"}
+            </button>
+          )}
           <button type="button" className="btn btn-plain" onClick={onOpenChat}>
             BACK TO CHAT
           </button>
@@ -266,26 +231,15 @@ export default function CreateStrategyModal({
         </div>
 
         <div className="strategy-modal-tools">
-          <button
-            type="button"
-            className="linklike"
-            onClick={() => void handleCopy()}
-          >
+          <button type="button" className="linklike" onClick={() => void handleCopy()}>
             {copied ? "COPIED ✓" : "COPY CONTRACT"}
           </button>
           <span aria-hidden="true">·</span>
-          <button
-            type="button"
-            className="linklike"
-            onClick={handleDownload}
-            disabled={!current.code}
-          >
+          <button type="button" className="linklike" onClick={handleDownload} disabled={!spec.code}>
             DOWNLOAD .SOL
           </button>
           <span aria-hidden="true">·</span>
-          <span>
-            {lineCount} LINES · TESTNET ONLY
-          </span>
+          <span>{lineCount} LINES · TESTNET ONLY</span>
         </div>
       </div>
     </div>

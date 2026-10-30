@@ -6,8 +6,9 @@ import SearchBar from "./components/SearchBar";
 import VaultTable from "./components/VaultTable";
 import Calculator from "./components/Calculator";
 import Footer from "./components/Footer";
+import { useCreatedVaults } from "./custom-contexts/CreatedVaultsContext";
+import { useRegistryActionModal } from "./custom-contexts/ModalContext";
 import type { VaultFilterKind } from "./vaults";
-import { VAULTS } from "./vaults";
 
 type Props = {
   ready: boolean;
@@ -31,6 +32,8 @@ export default function Home({
   const [query, setQuery] = useState("");
   const [kind, setKind] = useState<VaultFilterKind>("all");
   const [chain, setChain] = useState("All");
+  const { allVaults } = useCreatedVaults();
+  const { setOpen } = useRegistryActionModal();
 
   return (
     <div className="page">
@@ -83,14 +86,14 @@ export default function Home({
             </p>
           </div>
           <div className="home-route-card">
-            <span className="home-route-kicker">AGENT DECISIONS</span>
-            <b>See the thesis before the move.</b>
+            <span className="home-route-kicker">AI THESES</span>
+            <b>Read the thesis before you deposit.</b>
             <p>
-              Telos agents post why they entered, rebalanced or exited. Read the
-              reasoning, risks and guardrails in AI Forums.
+              Every strategy carries the AI-written thesis, allocations and
+              guardrails it was built with.
             </p>
-            <Link className="btn btn-plain btn-sm" to="/forums">
-              Open AI Forums →
+            <Link className="btn btn-plain btn-sm" to="/strategies">
+              Browse strategies →
             </Link>
           </div>
         </section>
@@ -98,18 +101,28 @@ export default function Home({
         <section id="vaults" className="section">
           <div className="section-title">
             <h2>Vaults</h2>
-            <span className="sample-tag">SAMPLE DATA</span>
+            <span className="sample-tag">TESTNET</span>
             <Link className="section-more" to="/vaults">
               View full index →
             </Link>
           </div>
-          <VaultTable vaults={VAULTS} query={query} kind={kind} chain={chain} />
+          {allVaults.length > 0 ? (
+            <VaultTable vaults={allVaults} query={query} kind={kind} chain={chain} />
+          ) : (
+            <div className="panel strategy-empty">
+              <h3>No vaults yet</h3>
+              <p className="field-hint">
+                Create a vault on a deployed strategy. Deposits settle on Robinhood Testnet, and the strategy can earn on any supported chain.
+              </p>
+              <button type="button" className="btn btn-sm" onClick={() => setOpen(true)}>
+                ＋ Create a vault
+              </button>
+            </div>
+          )}
           <p className="note">
-            SAMPLE DATA — not live yields. Testnet only. Protocols shown are
-            example strategy targets, not official integrations or partnerships.
-            Deposits settle on Robinhood Testnet while each vault can deploy on
-            any supported EVM chain. Telos is a hub for yield on every chain,
-            accessible from one chain.
+            Testnet only. Deposits settle on Robinhood Testnet while each strategy
+            can earn on any supported EVM chain. Telos is a hub for yield on every
+            chain, accessible from one chain.
           </p>
         </section>
 
@@ -119,8 +132,8 @@ export default function Home({
           <div className="section-title">
             <h2>How Telos works</h2>
             <span className="sample-tag">TESTNET</span>
-            <Link className="section-more" to="/forums">
-              See agent decisions →
+            <Link className="section-more" to="/strategies">
+              Browse strategies →
             </Link>
           </div>
           <ol className="home-how-steps">
@@ -144,9 +157,8 @@ export default function Home({
               <span className="home-how-step">03</span>
               <b>Decisions in public</b>
               <p>
-                Every enter, rebalance or exit is posted with its thesis, risks
-                and guardrails in{" "}
-                <Link to="/forums">AI Forums</Link> before the move.
+                Every strategy is published with its AI thesis, risks and
+                guardrails on the <Link to="/strategies">Strategies</Link> page.
               </p>
             </li>
             <li>

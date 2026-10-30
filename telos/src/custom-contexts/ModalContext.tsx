@@ -1,4 +1,4 @@
-import { useWallets } from "@privy-io/react-auth";
+/* oxlint-disable react/only-export-components -- context, provider and hook share one module; Fast Refresh just reloads these files fully. */
 import {
   createContext,
   useCallback,
@@ -8,8 +8,6 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import type { LaunchPad } from "../interfaces/LaunchPad";
-import type { Registry } from "../onchain/Registry";
 import type { StrategySpec } from "../strategies/strategy-standard";
 import type { CreatorRewardMode } from "../vaults";
 
@@ -81,14 +79,7 @@ const RegistryActionModalContext = createContext<RegistryContextType | null>(
   null,
 );
 
-export function RegistryActionModalProvider({
-  children,
-}: {
-  children: ReactNode;
-  registry: Registry;
-  launchPads: Map<number, LaunchPad>;
-}) {
-  useWallets();
+export function RegistryActionModalProvider({ children }: { children: ReactNode }) {
   const [open, setOpenState] = useState(false);
   const [owner, setOwner] = useState<string>();
   const [vaultName, setVaultName] = useState("");
