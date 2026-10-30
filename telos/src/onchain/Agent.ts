@@ -3,11 +3,11 @@ import type LLM from "../interfaces/LLM";
 import type { address } from "../types/solidity-types";
 
 export class Agent {
+  id: number;
   llm: LLM;
   key: string;
   walletAcc: PrivateKeyAccount | null;
   creator: address;
-  id: number;
   model: string;
   constructor(
     _id: number,

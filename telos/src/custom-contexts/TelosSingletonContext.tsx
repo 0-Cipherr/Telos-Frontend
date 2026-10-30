@@ -51,9 +51,9 @@ export function TelosSingletonManagerProvider({
     const telosAPIInstance: TelosAPI | null = telosAPI();
     const modelManagerInstance = modelsManager();
     const llmInstance = LLM(
+      import.meta.env.OPEN_ROUTER_SECRET,
       "",
-      "",
-      "",
+      modelManagerInstance,
       telosAPIInstance as TelosAPI,
       modelManagerInstance,
     );
@@ -62,7 +62,6 @@ export function TelosSingletonManagerProvider({
     const onchainExecutorInstance: OnchainExecutor | null = onchainExecutor();
     const stripeInstance: Stripe | null = stripe();
     const registryInstance: Registry | null = registry(
-      "" as address,
       "",
       "",
       "",
@@ -128,17 +127,6 @@ export function TelosSingletonManagerProvider({
 
   function stripe() {
     return new Stripe();
-  }
-
-  function launchpads() {
-    // try {
-    //   const launchpads: Map<string, LaunchPad> = new Map<string, LaunchPad>();
-    //   launchpads.set("pons", new Pons("",));
-    //   launchpads.set("hoookrfun", new HookrFun("",[],onchainExe));
-    // } catch (error) {
-    //   console.log(error);
-    //   return null;
-    // }
   }
 
   async function reinstantiateClasses() {}
