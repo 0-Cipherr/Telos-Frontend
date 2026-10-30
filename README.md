@@ -1,5 +1,5 @@
 # Telos — Frontend
-
+ca 0x86885dfc203e96f03c9469291f0e8edfae04d16e
 The web interface for Telos, a cross-chain yield-strategy marketplace where users discover vaults, explore strategies, and access DeFi yield opportunities.
 
 ### Features
