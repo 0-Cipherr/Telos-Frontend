@@ -1,8 +1,3 @@
-import {
-  generatePrivateKey,
-  privateKeyToAccount,
-  type PrivateKeyAccount,
-} from "viem/accounts";
 import { OpenRouter } from "../../llm/OpenRouter";
 import type LLM from "../interfaces/LLM";
 import type { address } from "../types/solidity-types";
@@ -12,6 +7,11 @@ interface AgentInfo {
   id: number;
   agent: Agent;
 }
+
+type AgentWallet = { index: number; address: address };
+
+const AGENT_WALLET_API = `${(import.meta.env.VITE_TELOS_API_BASE as string | undefined) ?? ""}/api/agent-wallet`;
+
 // this is a singleton single shard instance across all places
 export class OnchainAgentManager {
   protected llm: LLM;
@@ -20,10 +20,7 @@ export class OnchainAgentManager {
   constructor(_llm: LLM) {
     this.llm = _llm;
     this.agents = new Map<number, AgentInfo>(); //maping for agnts
-    const agentsAvailable = async () => {
-      return await this.getCurrentAgentID();
-    };
-    this.currentAgentID = Number(agentsAvailable());
+    this.currentAgentID = 0;
   }
 
   getCurrentAgentId() {
@@ -34,8 +31,9 @@ export class OnchainAgentManager {
   setLLM(_llm: OpenRouter) {
     this.llm = _llm;
   }
-  //for encryptoing the strength of the key is very important
-  //use this Asymmetric Encryption:  uses pubkey
+
+  // Each agent wallet is derived server-side from the operator key. The browser
+  // only receives the index and public address, never a private key.
   async createAgent(
     username: any,
     creator: address,
@@ -43,14 +41,14 @@ export class OnchainAgentManager {
   ): Promise<any> {
     try {
       const result = await this.llm.createAgent(username);
-      const agentWallet: PrivateKeyAccount | null = await this.createWallet();
+      const wallet: AgentWallet = await this.createWallet();
       const agent = new Agent(
-        this.currentAgentID,
+        wallet.index,
         this.llm,
         creator,
         model,
         result,
-        agentWallet,
+        wallet.address,
       );
       this.addAgent(agent);
       return {
@@ -59,7 +57,7 @@ export class OnchainAgentManager {
         creator,
         model,
         result,
-        agentWallet,
+        agentWallet: wallet.address,
       };
     } catch (error) {
       console.log(error);
@@ -72,8 +70,8 @@ export class OnchainAgentManager {
   }
 
   addAgent(agent: Agent) {
-    this.agents?.set(this.currentAgentID, { id: this.currentAgentID, agent });
-    this.increaseCurrentAgentId();
+    this.agents?.set(agent.getId(), { id: agent.getId(), agent });
+    this.currentAgentID = Math.max(this.currentAgentID, agent.getId() + 1);
   }
 
   getAgent(id: number) {
@@ -89,44 +87,20 @@ export class OnchainAgentManager {
     this.currentAgentID++;
   }
   async getCurrentAgentID() {
-    return this.currentAgentID; //get this from db update based on total agents
+    return this.currentAgentID;
   }
-  async createWallet() {
-    try {
-      const key = await generatePrivateKey();
-      const account: PrivateKeyAccount | null =
-        await this.instantiateWallet(key);
-      console.log("ACC");
-      console.log(account);
 
-      return account;
-
-      // Create a local account from the private key
-    } catch (error) {
-      console.log(error);
-      throw new Error("Could not create a wallet please try again !");
+  async createWallet(): Promise<AgentWallet> {
+    const response = await fetch(AGENT_WALLET_API, { method: "POST" });
+    const body = await response.json().catch(() => ({}));
+    if (!response.ok || !body.address) {
+      throw new Error(body.error ?? "Could not create a wallet please try again !");
     }
+    return { index: body.index, address: body.address as address };
   }
 
   async checkForSchedueledEvents() {}
-  async instantiateWallet(key: any) {
-    try {
-      const account: PrivateKeyAccount | null = privateKeyToAccount(key);
-      return account;
-    } catch (error) {
-      console.log(error);
-      return null;
-    }
-  }
 
-  async genPrivateKey() {
-    try {
-      const privateKey = generatePrivateKey();
-      return privateKey;
-    } catch (error) {
-      console.log(error);
-    }
-  }
   getAgentId(): number {
     return 0;
   }
@@ -137,7 +111,3 @@ export class OnchainAgentManager {
     return this.getAgent(id)?.agent.getCreator();
   }
 }
-console.log("test");
-// const llm = new OpenRouter("", "", "", new TelosAPI("", [], ""));
-// const test = new OnchainAgentManager(llm);
-// test.createWallet();

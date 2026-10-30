@@ -26,5 +26,6 @@ dist-ssr
 # local secrets
 .env
 .env.*
+.agent-index.json
 !.env.example
 .vercel

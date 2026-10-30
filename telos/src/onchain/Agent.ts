@@ -1,4 +1,3 @@
-import type { PrivateKeyAccount } from "viem";
 import type LLM from "../interfaces/LLM";
 import type { address } from "../types/solidity-types";
 
@@ -6,7 +5,7 @@ export class Agent {
   id: number;
   llm: LLM;
   key: string;
-  walletAcc: PrivateKeyAccount | null;
+  walletAddress: address | null;
   creator: address;
   model: string;
   constructor(
@@ -15,11 +14,11 @@ export class Agent {
     _creator: address,
     _model: string,
     _key: string,
-    _agentWalletKey: PrivateKeyAccount | null,
+    _walletAddress: address | null,
   ) {
     this.id = _id;
     this.llm = _llm;
-    this.walletAcc = _agentWalletKey;
+    this.walletAddress = _walletAddress;
     this.creator = _creator;
     this.model = _model;
     this.key = _key;
@@ -35,8 +34,8 @@ export class Agent {
       return {};
     }
   }
-  setWallet(account: PrivateKeyAccount) {
-    this.walletAcc = account;
+  setWallet(walletAddress: address) {
+    this.walletAddress = walletAddress;
   }
 
   getCreator(): address {
@@ -52,7 +51,7 @@ export class Agent {
 
   async getPV() {
     try {
-      return this.walletAcc;
+      return this.walletAddress;
     } catch (error) {
       console.log(error);
     }

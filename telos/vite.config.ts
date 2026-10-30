@@ -1,8 +1,11 @@
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
+import { readFile, writeFile } from "node:fs/promises";
 import { Readable } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import path from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
+import { deriveAgentAccount } from "./scripts/agent-wallets.mjs";
 
 const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Free models are the default because the project is meant to run without a
@@ -315,9 +318,106 @@ function llmProxy(): Plugin {
   };
 }
 
+/**
+ * Hands out agent indexes and their derived wallet addresses. Only public
+ * addresses leave the server; keys are derived from TELOS_MASTER_PRIVATE_KEY
+ * on demand and never sent to the browser.
+ */
+function agentWalletApi(): Plugin {
+  let masterKey = "";
+  let indexFile = "";
+  let queue: Promise<unknown> = Promise.resolve();
+
+  const readNext = async () => {
+    try {
+      return Number(JSON.parse(await readFile(indexFile, "utf8")).next) || 0;
+    } catch {
+      return 0;
+    }
+  };
+
+  const withLock = <T,>(task: () => Promise<T>): Promise<T> => {
+    const run = queue.then(task, task);
+    queue = run.catch(() => undefined);
+    return run;
+  };
+
+  const handle = async (req: IncomingMessage, res: ServerResponse) => {
+    if (!masterKey) {
+      sendJson(res, 503, { error: "TELOS_MASTER_PRIVATE_KEY is not set in .env" });
+      return;
+    }
+    if (req.method === "POST") {
+      try {
+        const origin = req.headers.origin;
+        const host = req.headers.host;
+        if (!origin || !host || new URL(origin).host !== host) {
+          sendJson(res, 403, { error: "forbidden origin" });
+          return;
+        }
+      } catch {
+        sendJson(res, 403, { error: "forbidden origin" });
+        return;
+      }
+      const index = await withLock(async () => {
+        const next = await readNext();
+        await writeFile(indexFile, JSON.stringify({ next: next + 1 }));
+        return next;
+      });
+      sendJson(res, 200, {
+        index,
+        address: deriveAgentAccount(masterKey as `0x${string}`, index).address,
+      });
+      return;
+    }
+    if (req.method === "GET") {
+      const index = Number(new URL(req.url ?? "/", "http://localhost").searchParams.get("index"));
+      if (!Number.isSafeInteger(index) || index < 0) {
+        sendJson(res, 400, { error: "index must be a non-negative integer" });
+        return;
+      }
+      sendJson(res, 200, {
+        index,
+        address: deriveAgentAccount(masterKey as `0x${string}`, index).address,
+      });
+      return;
+    }
+    sendJson(res, 405, { error: "method not allowed" });
+  };
+
+  const mount = (server: { middlewares: { use: (route: string, fn: (req: IncomingMessage, res: ServerResponse) => void) => void } }) => {
+    server.middlewares.use("/api/agent-wallet", (req, res) => {
+      handle(req, res).catch((error: unknown) => {
+        if (!res.headersSent) {
+          sendJson(res, 500, {
+            error: error instanceof Error ? error.message : "agent wallet failure",
+          });
+        } else {
+          res.end();
+        }
+      });
+    });
+  };
+
+  return {
+    name: "telos-agent-wallets",
+    configResolved(config) {
+      const env = loadEnv(config.mode, config.envDir || process.cwd(), "");
+      masterKey = (env.TELOS_MASTER_PRIVATE_KEY || "").trim();
+      indexFile = path.resolve(config.root, ".agent-index.json");
+    },
+    configureServer(server) {
+      mount(server);
+    },
+    configurePreviewServer(server) {
+      mount(server);
+    },
+  };
+}
+
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), tailwindcss(), llmProxy()],
+  plugins: [react(), tailwindcss(), llmProxy(), agentWalletApi()],
   optimizeDeps: {
     // Privy pulls in a lot of lazily imported code (the wallet list, embedded
     // wallet UI, etc.). Without pre-bundling it up front Vite discovers those
