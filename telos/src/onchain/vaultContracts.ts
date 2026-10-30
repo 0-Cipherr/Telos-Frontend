@@ -2,39 +2,9 @@ import type { Address, Chain } from "viem";
 import { arbitrumSepolia, baseSepolia } from "viem/chains";
 
 /**
- * Matches Telos-Core-Contracts (src/VaultFactory.sol, src/Vault.sol).
- * Factory addresses come from deployments/<chainId>.json after `./deploy.sh`.
+ * Matches Telos-Core-Contracts/src/TelosVault.sol. Vaults are deployed directly
+ * from the TelosVault bytecode (there is no factory).
  */
-export const VAULT_FACTORY_ABI = [
-  {
-    type: "function",
-    name: "createVault",
-    stateMutability: "nonpayable",
-    inputs: [
-      { name: "name", type: "string" },
-      { name: "symbol", type: "string" },
-      { name: "creatorFeeBps", type: "uint256" },
-    ],
-    outputs: [
-      { name: "vaultId", type: "uint256" },
-      { name: "vault", type: "address" },
-    ],
-  },
-  {
-    type: "event",
-    name: "VaultCreated",
-    anonymous: false,
-    inputs: [
-      { name: "vaultId", type: "uint256", indexed: true },
-      { name: "vault", type: "address", indexed: true },
-      { name: "creator", type: "address", indexed: true },
-      { name: "name", type: "string", indexed: false },
-      { name: "symbol", type: "string", indexed: false },
-      { name: "creatorFeeBps", type: "uint256", indexed: false },
-    ],
-  },
-] as const;
-
 export const VAULT_ABI = [
   { type: "function", name: "name", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "string" }] },
   { type: "function", name: "creator", stateMutability: "view", inputs: [], outputs: [{ name: "", type: "address" }] },
@@ -115,9 +85,16 @@ export type TelosChain = {
   id: number;
   name: string;
   chain: Chain;
-  factory: Address | undefined;
+  /** Stargate V2 native ETH pool on this chain (TelosVault requires one). */
+  stargate: Address | undefined;
   /** Stargate native ETH pool exists here, so bridgeOut works. */
   canBridge: boolean;
+};
+
+/** Wallet-independent deploy settings shared by every vault. */
+export const VAULT_DEPLOY_CONFIG = {
+  agent: import.meta.env.VITE_TELOS_AGENT_ADDRESS as Address | undefined,
+  protocolTreasury: import.meta.env.VITE_PROTOCOL_TREASURY as Address | undefined,
 };
 
 export const TELOS_CHAINS: TelosChain[] = [
@@ -125,14 +102,14 @@ export const TELOS_CHAINS: TelosChain[] = [
     id: baseSepolia.id,
     name: "Base Sepolia",
     chain: baseSepolia,
-    factory: import.meta.env.VITE_VAULT_FACTORY_BASE_SEPOLIA as Address | undefined,
+    stargate: import.meta.env.VITE_STARGATE_ETH_BASE_SEPOLIA as Address | undefined,
     canBridge: false,
   },
   {
     id: arbitrumSepolia.id,
     name: "Arbitrum Sepolia",
     chain: arbitrumSepolia,
-    factory: import.meta.env.VITE_VAULT_FACTORY_ARB_SEPOLIA as Address | undefined,
+    stargate: import.meta.env.VITE_STARGATE_ETH_ARB_SEPOLIA as Address | undefined,
     canBridge: true,
   },
 ];

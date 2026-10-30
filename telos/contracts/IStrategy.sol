@@ -3,12 +3,28 @@ pragma solidity ^0.8.24;
 
 /// @title IStrategy
 /// @notice Standard interface for all vault-managed strategy adapters.
+/// @dev Strategies have no constructor. They are configured once through
+///      initialize(), which the vault (or factory) calls right after deployment.
 /// @dev Protocol-specific implementations must follow the same
 ///      accounting, capital management, and reporting conventions.
 interface IStrategy {
+    /// @notice Configuration written once by initialize().
+    struct StrategyConfig {
+        address asset;
+        address protocol;
+        address vault;
+        uint256 chainId;
+        uint256 allocation;
+        uint256 maxDeposit;
+        uint256 minDeposit;
+    }
+
     /*//////////////////////////////////////////////////////////////
                                 EVENTS
     //////////////////////////////////////////////////////////////*/
+
+    /// @notice Emitted once when the strategy is configured.
+    event Initialized(address indexed vault, StrategyConfig config);
 
     /// @notice Emitted when assets are deployed into a protocol.
     event Deposited(
@@ -55,6 +71,21 @@ interface IStrategy {
     /// @notice The strategy cannot fulfill the requested operation.
     error InsufficientLiquidity();
 
+    /// @notice initialize() was called after the strategy was already configured.
+    error AlreadyInitialized();
+
+    /*//////////////////////////////////////////////////////////////
+                              SETUP
+    //////////////////////////////////////////////////////////////*/
+
+    /// @notice Configures the strategy. Must be callable exactly once.
+    /// @dev `protocolConfig` carries protocol-specific setup, e.g. a pool or
+    ///      router address encoded with abi.encode.
+    function initialize(
+        StrategyConfig calldata config,
+        bytes calldata protocolConfig
+    ) external;
+
     /*//////////////////////////////////////////////////////////////
                                 METADATA
     //////////////////////////////////////////////////////////////*/
@@ -66,6 +97,9 @@ interface IStrategy {
     /// @notice Returns the vault authorized to manage this strategy.
     function vault() external view returns (address);
 
+    /// @notice Returns the configuration stored by initialize().
+    function getConfig() external view returns (StrategyConfig memory);
+
     /*//////////////////////////////////////////////////////////////
                                 ACCOUNTING
     //////////////////////////////////////////////////////////////*/
@@ -76,6 +110,12 @@ interface IStrategy {
     ///      strategy-level liabilities.
     /// @dev The result must be denominated in units of asset().
     function totalAssets() external view returns (uint256);
+
+    /// @notice Returns the strategy's current annualised yield in basis points.
+    function getAPY() external view returns (uint256);
+
+    /// @notice Returns true while deposits and withdrawals are paused.
+    function paused() external view returns (bool);
 
     /*//////////////////////////////////////////////////////////////
                            CAPITAL MANAGEMENT

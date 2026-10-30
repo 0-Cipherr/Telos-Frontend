@@ -1,12 +1,14 @@
 import { useWallets } from "@privy-io/react-auth";
 import { useState, type FormEvent } from "react";
-import { decodeEventLog, type Address } from "viem";
+import type { Address } from "viem";
+import { telosFetch } from "../api-handler/Telos/telos-session";
 import { useCreatedVaults } from "../custom-contexts/CreatedVaultsContext";
 import { useRegistryActionModal } from "../custom-contexts/ModalContext";
+import { TELOS_VAULT_BYTECODE, TELOS_VAULT_CONSTRUCTOR_ABI } from "../onchain/TelosVaultBytecode";
 import {
   parseCreatorFeeBps,
   TELOS_CHAINS,
-  VAULT_FACTORY_ABI,
+  VAULT_DEPLOY_CONFIG,
   type TelosChain,
 } from "../onchain/vaultContracts";
 import { publicClientFor, walletClientFor } from "../onchain/walletClient";
@@ -14,22 +16,10 @@ import { MAX_CREATOR_FEE_PERCENT, PROTOCOL_FEE_PERCENT, type Vault } from "../va
 
 type Created = { vaultId: number; vault: Address };
 
-function readVaultCreated(logs: readonly { data: `0x${string}`; topics: readonly `0x${string}`[] }[]): Created | null {
-  for (const log of logs) {
-    try {
-      const decoded = decodeEventLog({
-        abi: VAULT_FACTORY_ABI,
-        data: log.data,
-        topics: log.topics as unknown as [`0x${string}`, ...`0x${string}`[]],
-      });
-      if (decoded.eventName === "VaultCreated") {
-        return { vaultId: Number(decoded.args.vaultId), vault: decoded.args.vault };
-      }
-    } catch {
-      // Log from another contract or event; keep looking.
-    }
-  }
-  return null;
+/** Random 48-bit id: unique enough per chain and fits the DB's BIGINT column. */
+function newVaultId(): number {
+  const bytes = crypto.getRandomValues(new Uint8Array(6));
+  return bytes.reduce((total, byte) => total * 256 + byte, 0);
 }
 
 function buildVault(telos: TelosChain, created: Created, name: string, creator: string, creatorFeePercent: string): Vault {
@@ -82,22 +72,48 @@ export default function CreateVaultModal() {
     if (!name.trim() || !symbol.trim()) return setError("Vault name and symbol are required.");
     const creatorFeeBps = parseCreatorFeeBps(creatorFee);
     if (creatorFeeBps === null) return setError(`Creator fee must be between 0 and ${MAX_CREATOR_FEE_PERCENT}%.`);
-    if (!telos.factory) return setError(`No factory address set for ${telos.name} (VITE_VAULT_FACTORY).`);
+    if (!telos.stargate) return setError(`No Stargate ETH pool set for ${telos.name} (VITE_STARGATE_ETH_*).`);
+    if (!VAULT_DEPLOY_CONFIG.agent || !VAULT_DEPLOY_CONFIG.protocolTreasury) {
+      return setError("VITE_TELOS_AGENT_ADDRESS and VITE_PROTOCOL_TREASURY must be set.");
+    }
 
     setBusy(true);
     try {
+      const vaultId = newVaultId();
       const walletClient = await walletClientFor(wallet, telos);
-      const hash = await walletClient.writeContract({
-        address: telos.factory,
-        abi: VAULT_FACTORY_ABI,
-        functionName: "createVault",
-        args: [name.trim(), symbol.trim(), creatorFeeBps],
+      const hash = await walletClient.deployContract({
+        abi: TELOS_VAULT_CONSTRUCTOR_ABI,
+        bytecode: TELOS_VAULT_BYTECODE,
+        args: [
+          name.trim(),
+          symbol.trim(),
+          BigInt(vaultId),
+          wallet.address as Address,
+          VAULT_DEPLOY_CONFIG.agent,
+          telos.stargate,
+          VAULT_DEPLOY_CONFIG.protocolTreasury,
+          creatorFeeBps,
+        ],
         account: wallet.address as Address,
         chain: telos.chain,
       });
       const receipt = await publicClientFor(telos).waitForTransactionReceipt({ hash });
-      const created = readVaultCreated(receipt.logs);
-      if (!created) throw new Error("Transaction mined, but no VaultCreated event was found.");
+      if (!receipt.contractAddress || receipt.status !== "success") {
+        throw new Error("Vault deployment transaction failed.");
+      }
+      const created: Created = { vaultId, vault: receipt.contractAddress };
+
+      await telosFetch("/creator/vaults", {
+        method: "POST",
+        body: JSON.stringify({
+          chainId: telos.id,
+          onchainVaultId: created.vaultId,
+          vaultAddress: created.vault,
+          name: name.trim(),
+          ticker: symbol.trim(),
+          creatorFeeBps: Number(creatorFeeBps),
+        }),
+      });
 
       addVault(buildVault(telos, created, name.trim(), wallet.address, creatorFee));
       setOpen(false);

@@ -399,7 +399,7 @@ export class HookrFun
             address: rulesAddress,
             functionName: options.asClaims ? "claimAsClaims" : "claimTo",
             args: [currency, recipient],
-          });
+          }) ?? undefined;
         }
 
         claims.push(claim);

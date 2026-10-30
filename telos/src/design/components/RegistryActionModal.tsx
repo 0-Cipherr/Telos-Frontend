@@ -61,6 +61,8 @@ export default function RegistryActionModal({ address }: Props) {
     setFeeReceiver,
     setStrategy,
     setStrategySpec,
+    enableAgent,
+    setEnableAgent,
   } = useRegistryActionModal();
 
   const [name, setName] = useState("");

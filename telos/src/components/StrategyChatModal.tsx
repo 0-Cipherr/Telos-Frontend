@@ -69,7 +69,7 @@ const WEB_STORAGE = "telos.llm.web";
 const DEFAULT_MODEL = "openai/gpt-4o-mini";
 // Dev/preview server proxy (see vite.config.ts). Keeps the API key server-side
 // so the lab is usable without any login/paste-a-key step.
-const PROXY_URL = "/api/chat";
+const PROXY_URL = `${(import.meta.env.VITE_TELOS_API_BASE as string | undefined) ?? ""}/api/chat`;
 const DIRECT_URL = "https://openrouter.ai/api/v1/chat/completions";
 // Free OpenRouter models queue before the first token, so be patient. The
 // strongest free coder model takes ~40s for a full contract. The modal still

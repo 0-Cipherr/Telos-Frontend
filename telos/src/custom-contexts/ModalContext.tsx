@@ -8,7 +8,6 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
-import { parseEther, type WriteContractReturnType } from "viem";
 import type { LaunchPad } from "../interfaces/LaunchPad";
 import type { Registry } from "../onchain/Registry";
 import type { StrategySpec } from "../strategies/strategy-standard";
@@ -50,8 +49,8 @@ export type RegistryContextType = {
   setVaultCreatorRewards: (mode: CreatorRewardMode) => void;
 
   /** Creator fee in ethers (wei). The modal formats it as a percentage. */
-  vaultFee: bigint;
-  setVaultFee: (fee: bigint) => void;
+  vaultFee: number;
+  setVaultFee: (fee: number) => void;
 
   feeReceiver: string;
   setFeeReceiver: (receiver: string) => void;
@@ -84,14 +83,12 @@ const RegistryActionModalContext = createContext<RegistryContextType | null>(
 
 export function RegistryActionModalProvider({
   children,
-  registry,
-  launchPads,
 }: {
   children: ReactNode;
   registry: Registry;
   launchPads: Map<number, LaunchPad>;
 }) {
-  const { wallets }: any = useWallets();
+  useWallets();
   const [open, setOpenState] = useState(false);
   const [owner, setOwner] = useState<string>();
   const [vaultName, setVaultName] = useState("");
@@ -102,77 +99,12 @@ export function RegistryActionModalProvider({
   const [vaultLaunchpads, setVaultLaunchpads] = useState<string[]>(["pons"]);
   const [vaultCreatorRewards, setVaultCreatorRewards] =
     useState<CreatorRewardMode>("fees");
-  const [vaultFee, setVaultFee] = useState<bigint>(parseEther("0.05"));
+  const [vaultFee, setVaultFee] = useState<number>(5);
   const [feeReceiver, setFeeReceiver] = useState("");
   const [strategy, setStrategy] = useState("");
   const [strategySpec, setStrategySpec] = useState<StrategySpec | null>(null);
   const [enableAgent, setEnableAgent] = useState(false);
   const [agentModel, setAgentModel] = useState(DEFAULT_AGENT_MODEL);
-
-  async function deployVault() {
-    if (enableAgent) {
-      deployVaultNativeWithAgent();
-    } else {
-      deployVaultNative();
-    }
-  }
-  async function encodeParams(params: any) {}
-  async function deployVaultNativeWithAgent() {
-    try {
-    } catch (error) {
-      console.log(error);
-    }
-  }
-
-  //only use when live on mainnet
-  async function createToken(launchpadId: number, encodedParams: string) {
-    try {
-      launchPads.get(launchpadId)?.createToken(encodedParams);
-    } catch (error) {
-      console.log(error);
-      return [];
-    }
-  }
-
-  async function deployVaultNative(): Promise<WriteContractReturnType | null> {
-    try {
-      /**
-       *  struct VaultDeployParams {
-              address deployer;
-              address[] authorizedVip;
-              string vaultName;
-              string vaultTicker;
-              address creator;
-              address vaultEndpoint;
-              VaultAssets.FeesInfo fees;
-              VaultAssets.feeReceiversInfo feeReceivers;
-          }
-          */
-      const encodedParams = await encodeParams([
-        wallets[0]?.address,
-        vaultAddresses,
-        vaultName,
-        vaultTicker,
-        wallets[0]?.address,
-        [vaultFee],
-      ]);
-      const reciept: WriteContractReturnType | null =
-        await registry.deployHubVault(
-          null,
-          wallets[0]?.address,
-          agentModel,
-          encodedParams, //should be encoded depoy params
-          enableAgent,
-        );
-      // await createToken("")
-
-      return reciept;
-    } catch (error) {
-      console.log(error);
-      // throw new Error("Could not deploy vault ");
-      return null;
-    }
-  }
 
   /**
    * Clear the seed values when the dialog closes so an unattached contract or
@@ -189,7 +121,7 @@ export function RegistryActionModalProvider({
       setVaultAddresses([]);
       setVaultLaunchpads(["pons"]);
       setVaultCreatorRewards("fees");
-      setVaultFee(parseEther("0.05"));
+      setVaultFee(5);
       setFeeReceiver("");
       setStrategy("");
       setStrategySpec(null);

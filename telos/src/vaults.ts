@@ -56,6 +56,8 @@ export type Vault = {
   createdAt?: string;
   /** address[] parameter stored with a user-created vault. */
   addresses?: string[];
+  /** Deployed TelosVault on a supported chain. Present for user-created vaults. */
+  onchain?: { chainId: number; vaultId: number; address: string };
   /** Launchpad listings selected at creation time. */
   launchpads?: string[];
   /** Robinhood stock token paired to a pons launch (and its reward asset). */

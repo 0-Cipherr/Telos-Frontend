@@ -1,20 +1,20 @@
-import { useWallets, UseWalletsInterface } from "@privy-io/react-auth";
+import { useWallets, type UseWalletsInterface } from "@privy-io/react-auth";
 import {
   createContext,
-  ReactNode,
+  type ReactNode,
   useContext,
   useEffect,
   useState,
 } from "react";
 import { OpenRouter } from "../../llm/OpenRouter";
 import TelosAPI from "../api-handler/Telos/telos-api-methods";
-import LLM from "../interfaces/LLM";
+import type LLM from "../interfaces/LLM";
 import { Stripe } from "../microservices/Stripe";
 import { ModelManager } from "../onchain/ModelManager";
 import { OnchainAgentManager } from "../onchain/OnchainAgentManager";
 import { OnchainExecutor } from "../onchain/OnchainExecutor";
 import { Registry } from "../onchain/Registry";
-import { address } from "../types/solidity-types";
+import type { address } from "../types/solidity-types";
 //implementing a singleton patter on shared instance for all classes across all pages
 //they all will change dynamically and adapt to chnges because some classes depend on others
 type SingletonManager = {
@@ -62,6 +62,7 @@ export function TelosSingletonManagerProvider({
     const onchainExecutorInstance: OnchainExecutor | null = onchainExecutor();
     const stripeInstance: Stripe | null = stripe();
     const registryInstance: Registry | null = registry(
+      "0x0000000000000000000000000000000000000000",
       "",
       "",
       "",
@@ -128,8 +129,6 @@ export function TelosSingletonManagerProvider({
   function stripe() {
     return new Stripe();
   }
-
-  async function reinstantiateClasses() {}
 
   async function updateWalletClient() {
     try {

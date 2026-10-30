@@ -83,7 +83,7 @@ export class Registry {
           functionName: "deployHubVault",
           args: [owner, this.encodeDeployParams(deployParams)],
         });
-      const creatorId = await this.telosAPI.uploadCreator([]);
+      await this.telosAPI.uploadCreator([]);
       await this.telosAPI.uploadVault([]);
       return reciept;
     } catch (error) {

@@ -9,8 +9,11 @@ import CreatorProfilePage from "./pages/CreatorProfilePage";
 import DeedsPage from "./pages/DeedsPage";
 import VaultDetailPage from "./pages/VaultDetailPage";
 import VaultsPage from "./pages/VaultsPage";
+import { connectTelosCreator } from "./api-handler/Telos/telos-session";
 
 type PreviewReason = "missing" | "insecure";
+
+let connectedAddress: string | null = null;
 
 type WalletProps = {
   ready: boolean;
@@ -119,8 +122,22 @@ export function PreviewApp({ reason = "missing" }: { reason?: PreviewReason }) {
 
 export default function App() {
   const { open }: any = useRegistryActionModal();
-  const { ready, authenticated, login, logout, user } = usePrivy();
+  const { ready, authenticated, login, logout, user, getAccessToken } = usePrivy();
   const address = user?.wallet?.address;
+
+  // First wallet connect: the backend issues this user's Telos API key and
+  // OpenRouter access is handled server-side. Runs once per wallet.
+  useEffect(() => {
+    if (!ready || !authenticated || !address) return;
+    if (connectedAddress === address) return;
+    connectedAddress = address;
+    getAccessToken()
+      .then((token) => (token ? connectTelosCreator(address, token) : null))
+      .catch((error) => {
+        connectedAddress = null;
+        console.error("[telos] connect failed:", error);
+      });
+  }, [ready, authenticated, address, getAccessToken]);
 
   return (
     <>

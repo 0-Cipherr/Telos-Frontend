@@ -338,6 +338,9 @@ export default defineConfig({
         changeOrigin: true,
         secure: false,
       },
+      // Telos API (Telos-API, port 3000): creators, vaults, agents.
+      "/creator": { target: "http://localhost:3000", changeOrigin: true },
+      "/registry": { target: "http://localhost:3000", changeOrigin: true },
     },
   },
 });
