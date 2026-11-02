@@ -14,13 +14,13 @@ export const STRATEGY_INTERFACE_SOURCE = interfaceSource.trim();
 export const STRATEGY_STANDARD_RULES = [
   "Implement IStrategy exactly: same function names, argument order, mutability and return types. Never add, remove or rename interface functions.",
   "Every state-changing entry point (deposit, withdraw, withdrawAll, harvest) reverts with Unauthorized() unless msg.sender == vault.",
-  "Constructor takes vault and asset plus any protocol addresses, rejects zero addresses with ZeroAddress(), and stores immutables.",
+  "initialize() takes the StrategyConfig plus protocol config, rejects zero addresses with ZeroAddress(), and can run only once.",
   "totalAssets() is always denominated in asset() and includes idle balance plus the live value of every deployed position, net of liabilities.",
   "deposit() never pulls tokens from the vault: the vault pre-funds the strategy. Deploy from the strategy's own balance and return the amount actually deployed.",
   "withdraw() and withdrawAll() transfer the returned asset to the vault before returning. Partial fills are allowed; report the amount actually transferred.",
   "harvest() must not move tokens. profitOrLoss = currentAssets - lastTotalAssets, and external capital flows must adjust lastTotalAssets so they are never counted as profit or loss.",
   "No admin keys, owner overrides, withdrawal pauses, delegatecall, assembly, selfdestruct, tx.origin or arbitrary external calls.",
-  "Protocol addresses come from the constructor. Never hardcode a protocol, vault or token address in the source.",
+  "Protocol addresses come from initialize(). Never hardcode a protocol, vault or token address in the source.",
   "Solidity 0.8.24, OpenZeppelin v5 SafeERC20 + ReentrancyGuard, one self-contained file, no TODOs or placeholders.",
 ] as const;
 
@@ -120,8 +120,9 @@ ${STRATEGY_INTERFACE_SOURCE}
 NON-NEGOTIABLE IMPLEMENTATION RULES
 1. File starts with \`// SPDX-License-Identifier: UNLICENSED\` and \`pragma solidity ^0.8.24;\`.
 2. Import the standard: \`import {IStrategy} from "./IStrategy.sol";\`. Use OpenZeppelin v5 \`SafeERC20\` and \`ReentrancyGuard\` (\`@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol\`, \`@openzeppelin/contracts/utils/ReentrancyGuard.sol\`).
-3. Exactly one contract: \`contract <Name>Strategy is IStrategy\`. Use \`using SafeERC20 for IERC20;\` and a private \`IERC20 internal immutable _asset;\` while exposing \`address public immutable override asset;\`.
-4. Constructor signature: \`constructor(address vault_, address asset_, <protocol addresses...>)\`. Reject every zero address with \`revert ZeroAddress()\`. Store \`vault\` as \`address public immutable override vault;\`. Reject a zero vault/asset even if the caller is trusted.
+3. Exactly one contract: \`contract <Name>Strategy is IStrategy\`. Use \`using SafeERC20 for IERC20;\` and a private \`IERC20 internal _asset;\` set in initialize(). Expose it with \`function asset() external view override returns (address)\`.
+4. No constructor. Setup is \`function initialize(StrategyConfig calldata config, bytes calldata protocolConfig) external override\`: revert \`AlreadyInitialized()\` if already configured, reject \`config.vault\` or \`config.asset\` equal to zero with \`revert ZeroAddress()\`, store \`config\` so that \`getConfig()\` returns it, decode protocol addresses from \`protocolConfig\` with \`abi.decode\`, reject zero protocol addresses, and emit \`Initialized(config.vault, config)\`. Expose the vault with \`function vault() external view override returns (address)\`.
+15. Implement all eleven IStrategy functions: initialize, asset, vault, getConfig, totalAssets, getAPY, paused, deposit, withdraw, withdrawAll, harvest. \`getAPY()\` returns the annualised yield in basis points. \`paused()\` returns true only for an automatic, protocol-driven condition; no admin can set it.
 5. Authorization: every mutating function is \`external override nonReentrant\` and gated by an \`onlyVault\` modifier that checks \`msg.sender == vault\` and otherwise \`revert Unauthorized()\`. There is no owner, governance, pause or rescue path.
 6. \`totalAssets()\` must be \`external view override\` and return: idle \`_asset.balanceOf(address(this))\` plus the live asset value of every deployed position (use the protocol's exchange rate / \`convertToAssets\` / oracle read). Never return a stale cached number and never include assets the strategy does not control. Because it is \`external\`, any call from another function in the same contract must be written \`this.totalAssets()\` — a bare \`totalAssets()\` will not compile.
 7. \`deposit(uint256 assets, bytes calldata data)\`: validate \`assets > 0\` with \`revert InvalidAmount()\`; the vault has already transferred the tokens, so NEVER call \`transferFrom\`. Deploy from the strategy's own balance, measure the actual amount deployed, leave unused tokens idle, emit \`Deposited(vault, assets, assetsDeployed)\` and return the actual amount. Unused \`data\` must be unnamed in the implementation to avoid warnings.
@@ -130,12 +131,12 @@ NON-NEGOTIABLE IMPLEMENTATION RULES
 10. \`harvest(bytes calldata data)\` must not transfer tokens. Compute \`currentAssets = totalAssets()\`; \`profitOrLoss = int256(currentAssets) - int256(_lastTotalAssets)\`; then set \`_lastTotalAssets = currentAssets\`; emit \`Harvested(vault, currentAssets, profitOrLoss)\`. Guard the int256 casts so a value above type(int256).max cannot wrap.
 11. External capital flows are NOT profit. The vault pre-funds deposit, so that call is \`_lastTotalAssets += assets\` (the full pre-funded amount, not just the deployed delta). On withdraw/withdrawAll subtract the exact vault balance delta. The harvest identity must hold: deposit then immediate harvest reports 0, and withdraw then immediate harvest reports 0.
 12. Source must compile cleanly with 0.8.24. No TODO, no \`...\`, no placeholder or zero addresses in the body, no hardcoded protocol/token/vault addresses, no \`delegatecall\`, \`assembly\`, \`selfdestruct\`, \`tx.origin\`, unbounded loops or arrays, and no upgradeable proxy.
-13. Protocol-specific code: declare only the minimal external interface you call inside the file, with the protocol address supplied through the constructor. If a protocol's exact ABI is uncertain, use a well-known, liquid venue on that chain and keep the integration surface minimal. Declare that interface in THIS file but at FILE LEVEL, outside the contract — do not nest an interface inside the contract body — and never import "./interfaces/...", "./libraries/..." or any other local file.
+13. Protocol-specific code: declare only the minimal external interface you call inside the file, with the protocol address supplied through initialize()'s protocolConfig. If a protocol's exact ABI is uncertain, use a well-known, liquid venue on that chain and keep the integration surface minimal. Declare that interface in THIS file but at FILE LEVEL, outside the contract — do not nest an interface inside the contract body — and never import "./interfaces/...", "./libraries/..." or any other local file.
 14. The contract must be standalone: the ONLY allowed imports are \`./IStrategy.sol\` and OpenZeppelin imports. It must be safe to deploy as-is on the target testnet.
 
 SELF-CHECK BEFORE YOU COMPILE
 An independent ETHSKILLS security audit runs before this contract can be registered. Write as if a hostile reviewer will try to drain it.
-- all seven IStrategy members exist with matching signatures and \`override\`
+- all eleven IStrategy functions exist with matching signatures and \`override\`; initialize() can run only once
 - all four mutating functions are nonReentrant and onlyVault
 - all four events are emitted
 - deposit does not transferFrom
@@ -564,7 +565,7 @@ export function validateStrategySource(source: string): StrategyValidation {
     add("protocol interfaces must be declared at file level, outside the contract");
   }
 
-  for (const fn of ["asset", "vault", "totalAssets", ...MUTATING_FUNCTIONS]) {
+  for (const fn of ["initialize", "asset", "vault", "getConfig", "totalAssets", "getAPY", "paused", ...MUTATING_FUNCTIONS]) {
     const asFunction = new RegExp(`function\\s+${fn}\\s*\\(`).test(code);
     const asPublicVar = new RegExp(
       `(?:\\b${fn}\\b[^;\\n]*\\bpublic\\b|\\bpublic\\b[^;\\n]*\\b${fn}\\b)`,
@@ -652,7 +653,7 @@ export function validateStrategySource(source: string): StrategyValidation {
 
   const hardcoded = code.match(/\b0x[a-fA-F0-9]{40}\b/g) ?? [];
   if (hardcoded.some((address) => !/^0x0{40}$/i.test(address))) {
-    add("protocol/token addresses must come from the constructor, not literals");
+    add("protocol/token addresses must come from initialize(), not literals");
   }
 
   return { ok: issues.length === 0, issues };

@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { AI_FORUM_POSTS } from "../ai-forum";
 import { DEPOSIT_CHAIN } from "../chains";
 import { ChainIcon } from "../components/ChainBadge";
 import CreatorAvatar from "../components/CreatorAvatar";
@@ -98,7 +97,6 @@ export default function VaultDetailPage({
     launchpadItems.map((item) => `${item.emoji} ${item.name}`).join(" · ") ||
     "—";
   const launchpadAssets = vaultLaunchpadPairs(vault);
-  const thesisPost = AI_FORUM_POSTS.find((post) => post.vaultId === vault.id);
   const runningModel = describeLLM(vault.agentModel);
   const strategyModel = describeLLM(vault.strategyModel);
 
@@ -417,16 +415,13 @@ export default function VaultDetailPage({
 
             <section className="panel" aria-labelledby="vault-thesis-heading">
               <div className="vault-panel-head">
-                <h2 id="vault-thesis-heading">Agent thesis</h2>
-                <span className="sample-tag">AI FORUM</span>
+                <h2 id="vault-thesis-heading">Strategy thesis</h2>
               </div>
               <p className="field-hint">
-                {thesisPost
-                  ? `“${thesisPost.title}” — ${thesisPost.agent} explains the ${thesisPost.decision.toLowerCase()} decision.`
-                  : "No forum thread is attached to this vault yet. Agent theses are posted before each move."}
+                {vault.strategySummary || vault.description || "No thesis was published with this strategy."}
               </p>
-              <Link className="btn btn-plain btn-sm" to="/forums">
-                {thesisPost ? "Read the full thesis →" : "Browse AI Forums →"}
+              <Link className="btn btn-plain btn-sm" to="/strategies">
+                Browse strategies →
               </Link>
             </section>
 

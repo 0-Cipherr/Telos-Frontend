@@ -6512,3 +6512,113 @@ input[type="range"] {
     font-size: 10.5px;
   }
 }
+
+/* ---- Strategies page + create-vault strategy picker ------------------------ */
+
+.strategy-empty {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+  padding: 22px;
+}
+
+.strategy-empty h3 {
+  margin: 0;
+}
+
+.strategy-card-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+}
+
+.strategy-card {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+  padding: 18px;
+}
+
+.strategy-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.strategy-card-head h3 {
+  margin: 2px 0 0;
+  font-size: 1.1rem;
+}
+
+.strategy-card-chain {
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--lime);
+}
+
+.strategy-card-ticker {
+  font-family: ui-monospace, monospace;
+  color: var(--muted);
+}
+
+.strategy-card-thesis {
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.strategy-card-allocs {
+  display: grid;
+  gap: 8px;
+}
+
+.strategy-card-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0;
+}
+
+.strategy-card-stats dt {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.strategy-card-stats dd {
+  margin: 2px 0 0;
+  font-weight: 600;
+}
+
+.strategy-card-guardrails summary {
+  cursor: pointer;
+  color: var(--link);
+}
+
+.strategy-card-guardrails ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--muted);
+}
+
+.registry-empty {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+
+.registry-strategy-preview {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--row-alt);
+}
+
+.registry-strategy-preview p {
+  margin: 0;
+  line-height: 1.5;
+}

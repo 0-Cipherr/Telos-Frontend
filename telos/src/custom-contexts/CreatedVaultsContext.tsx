@@ -1,3 +1,4 @@
+/* oxlint-disable react/only-export-components -- context, provider and hook share one module; Fast Refresh just reloads these files fully. */
 import {
   createContext,
   useCallback,

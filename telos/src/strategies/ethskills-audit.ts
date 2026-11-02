@@ -75,7 +75,7 @@ The canonical pack could not be fetched. Audit conservatively with these checks:
 4. Harvest: must not move tokens. profitOrLoss excludes deposits/withdrawals; lastTotalAssets is adjusted by actual capital flows.
 5. Reentrancy: all state-changing entry points are nonReentrant; state is updated before external calls where practical.
 6. ERC20 edge cases: SafeERC20, fee-on-transfer and rebasing tokens, missing return values, token decimals.
-7. External protocols: addresses are constructor-supplied and non-zero; share/asset conversion is read live; liquidity, slippage, oracle staleness and sequencer status are handled where applicable.
+7. External protocols: addresses are supplied through initialize() and non-zero; share/asset conversion is read live; liquidity, slippage, oracle staleness and sequencer status are handled where applicable.
 8. Failure modes: partial withdrawals are reported honestly; withdrawAll does not brick on illiquid positions; zero amounts revert InvalidAmount.
 9. Arithmetic: 0.8.24 checked math, explicit int256 cast bounds, no precision loss that favors the user over the vault.
 10. Deployability: no placeholders, no hardcoded addresses, no owner backdoor, no delegatecall/assembly/selfdestruct, no unbounded loops.`;
