@@ -16,6 +16,8 @@ export function SingletonContextProvider({
 }: {
   children: ReactNode;
 }) {
+  const telosBaseUrl = "/api";
+  const telosEndpoints = {};
   const [API, setAPI] = useState<TelosAPI | null>(null);
   const [walletManager, setWaletManager] = useState<WalletManager | null>(null);
   useEffect(() => {
@@ -26,7 +28,10 @@ export function SingletonContextProvider({
   }, []);
 
   async function instantiateClasses() {
-    const api: TelosAPI | null = initializeTelosAPI("", "");
+    const api: TelosAPI | null = initializeTelosAPI(
+      telosBaseUrl,
+      telosEndpoints,
+    );
     const walletManagerC: WalletManager | null = initializeWalletManager();
     setAPI(api);
     setWaletManager(walletManagerC);
